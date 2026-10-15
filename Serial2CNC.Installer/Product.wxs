@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Serial2CNC"
+    Manufacturer="EHoglid"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="f7f3b2f9-6562-43f5-ba2d-cfd2262448f8"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Serial2CNC is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Serial2CNC">
+        <Directory Id="AGENTFOLDER" Name="Agent" />
+        <Directory Id="APIFOLDER" Name="Api" />
+        <Directory Id="WEBFOLDER" Name="Web" />
+      </Directory>
+    </StandardDirectory>
+
+    <DirectoryRef Id="AGENTFOLDER">
+      <Component Id="AgentExeComponent" Guid="22cddcb2-def4-4e5b-8739-45da417d13e6">
+        <File Id="AgentExe" Source="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" KeyPath="yes" />
+        <ServiceInstall
+          Id="AgentServiceInstall"
+          Name="Serial2CNC.Agent"
+          DisplayName="Serial2CNC Transfer Agent"
+          Description="Serial2CNC transfer runtime service"
+          Arguments="--urls http://127.0.0.1:62904"
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Account="LocalSystem" />
+        <ServiceControl
+          Id="AgentServiceControl"
+          Name="Serial2CNC.Agent"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="APIFOLDER">
+      <Component Id="ApiExeComponent" Guid="32787f90-4621-46da-89be-d2bba26c0549">
+        <File Id="ApiExe" Source="$(var.ApiPublishDir)\Serial2CNC.Api.exe" KeyPath="yes" />
+        <ServiceInstall
+          Id="ApiServiceInstall"
+          Name="Serial2CNC.Api"
+          DisplayName="Serial2CNC API"
+          Description="Serial2CNC API gateway and log hub"
+          Arguments="--urls http://127.0.0.1:62901 --Agent:BaseUrl=http://127.0.0.1:62904"
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Account="LocalSystem">
+          <ServiceDependency Id="Serial2CNC.Agent" />
+        </ServiceInstall>
+        <ServiceControl
+          Id="ApiServiceControl"
+          Name="Serial2CNC.Api"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="WEBFOLDER">
+      <Component Id="WebExeComponent" Guid="8b0dd889-1ac8-45eb-afa6-71ded44b2d98">
+        <File Id="WebExe" Source="$(var.WebPublishDir)\Serial2CNC.Web.exe" KeyPath="yes" />
+        <ServiceInstall
+          Id="WebServiceInstall"
+          Name="Serial2CNC.Web"
+          DisplayName="Serial2CNC Web UI"
+          Description="Serial2CNC remote web UI"
+          Arguments="--urls http://127.0.0.1:62899 --Api:BaseUrl=http://127.0.0.1:62901 --Api:PublicBaseUrl=http://127.0.0.1:62901"
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Account="LocalSystem">
+          <ServiceDependency Id="Serial2CNC.Api" />
+        </ServiceInstall>
+        <ServiceControl
+          Id="WebServiceControl"
+          Name="Serial2CNC.Web"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="Serial2CNC" Level="1">
+      <ComponentRef Id="AgentExeComponent" />
+      <ComponentRef Id="ApiExeComponent" />
+      <ComponentRef Id="WebExeComponent" />
+      <Files Directory="AGENTFOLDER" Include="$(var.AgentPublishDir)\**">
+        <Exclude Files="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" />
+      </Files>
+      <Files Directory="APIFOLDER" Include="$(var.ApiPublishDir)\**">
+        <Exclude Files="$(var.ApiPublishDir)\Serial2CNC.Api.exe" />
+      </Files>
+      <Files Directory="WEBFOLDER" Include="$(var.WebPublishDir)\**">
+        <Exclude Files="$(var.WebPublishDir)\Serial2CNC.Web.exe" />
+      </Files>
+    </Feature>
+  </Package>
+</Wix>
