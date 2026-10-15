@@ -1,0 +1,339 @@
+﻿<Window x:Class="Serial2CNC.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Serial2CNC"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Style="{DynamicResource MaterialDesignWindow}"
+        Title="Serial2CNC - Send2CNC"
+        Icon="Assets/Serial2CNC.ico"
+        Height="760"
+        Width="980"
+        MinHeight="680"
+        MinWidth="900">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="Opacity" Value="0.78" />
+        </Style>
+
+        <Style x:Key="ErrorTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="OrangeRed" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Margin" Value="0,2,0,6" />
+            <Setter Property="Visibility" Value="Collapsed" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <materialDesign:Card Grid.Row="0" Margin="0,0,0,10" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="38" Height="38" CornerRadius="19" Background="{DynamicResource PrimaryHueMidBrush}" Margin="0,0,12,0">
+                        <Grid>
+                            <Canvas Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Rectangle Width="14" Height="10" Canvas.Left="4" Canvas.Top="6" RadiusX="1" RadiusY="1" Fill="#FFFFFFFF" />
+                                <Rectangle Width="4" Height="4" Canvas.Left="9" Canvas.Top="9" Fill="{DynamicResource PrimaryHueMidBrush}" />
+                                <Rectangle Width="2" Height="14" Canvas.Left="2" Canvas.Top="4" Fill="#FFFFFFFF" />
+                                <Rectangle Width="2" Height="14" Canvas.Left="18" Canvas.Top="4" Fill="#FFFFFFFF" />
+                            </Canvas>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Serial2CNC" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="Connection" Opacity="0.72" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton x:Name="TcpModeRadio" Content="TCP (USR-W610)" IsChecked="True" Margin="0,0,16,0" Checked="ModeChanged" />
+                    <RadioButton x:Name="SerialModeRadio" Content="Serial / COM" Checked="ModeChanged" />
+                </StackPanel>
+
+                <Button x:Name="AdvancedSettingsButton"
+                        Grid.Column="3"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Right"
+                        Click="AdvancedSettingsButton_Click"
+                        ToolTip="Show or hide advanced connection settings">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="CogOutline" Width="16" Height="16" Margin="0,0,6,0" />
+                        <TextBlock Text="Settings" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </materialDesign:Card>
+
+        <StackPanel x:Name="AdvancedSettingsPanel" Grid.Row="1" Margin="0,0,0,10" Visibility="Collapsed">
+            <TextBlock Text="Connection settings (advanced)" FontWeight="SemiBold" Margin="0,0,0,8" />
+
+                <materialDesign:Card Margin="0,0,0,10" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Theme:" Style="{StaticResource FieldLabelStyle}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton x:Name="ThemeSystemRadio" Content="System" GroupName="ThemePreference" Checked="ThemeModeChanged" Margin="0,0,16,0" IsChecked="True" />
+                            <RadioButton x:Name="ThemeLightRadio" Content="Light" GroupName="ThemePreference" Checked="ThemeModeChanged" Margin="0,0,16,0" />
+                            <RadioButton x:Name="ThemeDarkRadio" Content="Dark" GroupName="ThemePreference" Checked="ThemeModeChanged" />
+                        </StackPanel>
+                    </Grid>
+                </materialDesign:Card>
+
+                <materialDesign:Card x:Name="TcpSettingsGroup" Margin="0,0,0,10" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Text="TCP Settings" Style="{StaticResource SectionTitleStyle}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="IP Address:" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBox x:Name="TcpIpTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,12,0" Text="192.168.1.50" materialDesign:HintAssist.Hint="IP Address" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Port:" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBox x:Name="TcpPortTextBox" Grid.Row="1" Grid.Column="3" Margin="0,0,0,0" Text="23" materialDesign:HintAssist.Hint="Port" />
+
+                        <TextBlock x:Name="TcpIpErrorText" Grid.Row="2" Grid.Column="1" Style="{StaticResource ErrorTextStyle}" />
+                        <TextBlock x:Name="TcpPortErrorText" Grid.Row="2" Grid.Column="3" Style="{StaticResource ErrorTextStyle}" />
+
+                        <CheckBox x:Name="TcpXonXoffCheckBox" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="4" Content="Use TCP XON/XOFF flow control" IsChecked="True" />
+                    </Grid>
+                </materialDesign:Card>
+
+                <materialDesign:Card x:Name="SerialSettingsGroup" Margin="0,0,0,10" Padding="12" IsEnabled="False">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Text="Serial Settings" Style="{StaticResource SectionTitleStyle}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="COM Port:" Style="{StaticResource FieldLabelStyle}" />
+                        <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,6">
+                            <Button Content="Refresh" DockPanel.Dock="Right" Margin="6,0,0,0" Padding="8,2" Click="RefreshPorts_Click" />
+                            <ComboBox x:Name="ComPortComboBox" IsEditable="True" />
+                        </DockPanel>
+
+                        <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Baud Rate:" Style="{StaticResource FieldLabelStyle}" />
+                        <ComboBox x:Name="BaudRateComboBox" Grid.Row="1" Grid.Column="3" Margin="0,0,0,6" IsEditable="True" SelectedIndex="5">
+                            <ComboBoxItem Content="110" />
+                            <ComboBoxItem Content="300" />
+                            <ComboBoxItem Content="600" />
+                            <ComboBoxItem Content="1200" />
+                            <ComboBoxItem Content="2400" />
+                            <ComboBoxItem Content="4800" />
+                            <ComboBoxItem Content="9600" />
+                            <ComboBoxItem Content="19200" />
+                            <ComboBoxItem Content="38400" />
+                            <ComboBoxItem Content="57600" />
+                            <ComboBoxItem Content="115200" />
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Parity:" Style="{StaticResource FieldLabelStyle}" />
+                        <ComboBox x:Name="ParityComboBox" Grid.Row="2" Grid.Column="1" Margin="0,0,12,6" SelectedIndex="0">
+                            <ComboBoxItem Content="None" />
+                            <ComboBoxItem Content="Odd" />
+                            <ComboBoxItem Content="Even" />
+                            <ComboBoxItem Content="Mark" />
+                            <ComboBoxItem Content="Space" />
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="Data Bits:" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBox x:Name="DataBitsTextBox" Grid.Row="2" Grid.Column="3" Margin="0,0,0,6" Text="8" materialDesign:HintAssist.Hint="Data Bits" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Stop Bits:" Style="{StaticResource FieldLabelStyle}" />
+                        <ComboBox x:Name="StopBitsComboBox" Grid.Row="3" Grid.Column="1" Margin="0,0,12,0" SelectedIndex="1">
+                            <ComboBoxItem Content="None" />
+                            <ComboBoxItem Content="One" />
+                            <ComboBoxItem Content="Two" />
+                            <ComboBoxItem Content="OnePointFive" />
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Text="Handshake:" Style="{StaticResource FieldLabelStyle}" />
+                        <ComboBox x:Name="HandshakeComboBox" Grid.Row="3" Grid.Column="3" SelectedIndex="0">
+                            <ComboBoxItem Content="None" />
+                            <ComboBoxItem Content="XOnXOff" />
+                            <ComboBoxItem Content="RequestToSend" />
+                            <ComboBoxItem Content="RequestToSendXOnXOff" />
+                        </ComboBox>
+                    </Grid>
+                </materialDesign:Card>
+
+                <materialDesign:Card Margin="0,0,0,10" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="8" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="Send settings" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Delay between lines (ms):" Style="{StaticResource FieldLabelStyle}" />
+                        <TextBox x:Name="SendDelayTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,10,0" Text="0" materialDesign:HintAssist.Hint="0" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Text="Okuma settings" FontWeight="SemiBold" Margin="0,0,0,4" />
+
+                        <CheckBox x:Name="UseOspCheckBox"
+                                  Grid.Row="4"
+                                  Grid.Column="0"
+                                  Grid.ColumnSpan="3"
+                                  Content="Use Okuma OSP7000L framing (${NAME}% ... %)"
+                                  IsChecked="True" />
+                    </Grid>
+                </materialDesign:Card>
+        </StackPanel>
+
+        <materialDesign:Card Grid.Row="3" Margin="0,0,0,10" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="120" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="File and OSP7000L Options" Style="{StaticResource SectionTitleStyle}" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="NC File:" Style="{StaticResource FieldLabelStyle}" />
+                <TextBox x:Name="FilePathTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,10,6" materialDesign:HintAssist.Hint="Path to .nc file" />
+                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="BrowseFile_Click" Margin="0,0,0,6" VerticalAlignment="Bottom" />
+
+                <TextBlock x:Name="FilePathErrorText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ErrorTextStyle}" />
+
+                <TextBlock x:Name="ProgramNameLabel"
+                           Grid.Row="3"
+                           Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Text="Program Name:"
+                           Style="{StaticResource FieldLabelStyle}"
+                           Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <Grid x:Name="ProgramNamePanel"
+                      Grid.Row="3"
+                      Grid.Column="1"
+                      Grid.ColumnSpan="2"
+                      Margin="0,0,0,4"
+                      Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBox x:Name="ProgramNameTextBox"
+                             ToolTip="Leave empty to auto-generate from file name as UPPERCASE .MIL"
+                             materialDesign:HintAssist.Hint="Optional program name"
+                             MouseDoubleClick="ProgramNameTextBox_MouseDoubleClick"
+                             LostKeyboardFocus="ProgramNameTextBox_LostKeyboardFocus">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                <Setter Property="IsReadOnly" Value="True" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                                <Setter Property="Opacity" Value="0.72" />
+                                <Style.Triggers>
+                                    <Trigger Property="IsReadOnly" Value="False">
+                                        <Setter Property="Cursor" Value="IBeam" />
+                                        <Setter Property="Opacity" Value="1" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+                </Grid>
+
+                <TextBlock Grid.Row="4"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="2"
+                           Margin="0,2,0,0"
+                           FontSize="11"
+                           Opacity="0.70"
+                           Text="Double-click to edit." 
+                           Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </Grid>
+        </materialDesign:Card>
+
+        <materialDesign:Card Grid.Row="5" Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="Transfer and Log" Style="{StaticResource SectionTitleStyle}" />
+                    <Button x:Name="StartButton" Grid.Column="1" Content="Start Send" Click="Start_Click" Margin="0,0,8,0" />
+                    <Button x:Name="CancelButton" Grid.Column="2" Content="Cancel" Click="Cancel_Click" IsEnabled="False" />
+                </Grid>
+
+                <TextBlock x:Name="StatusTextBlock" Grid.Row="1" Text="Ready" Margin="0,0,0,6" FontWeight="SemiBold" />
+                <TextBox x:Name="LogTextBox" Grid.Row="2" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" materialDesign:HintAssist.Hint="Transfer output" />
+            </Grid>
+        </materialDesign:Card>
+
+        <ProgressBar x:Name="TransferProgressBar" Grid.Row="6" Height="20" Minimum="0" Maximum="100" />
+    </Grid>
+</Window>

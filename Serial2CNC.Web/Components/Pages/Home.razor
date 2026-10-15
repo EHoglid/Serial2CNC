@@ -1,0 +1,667 @@
+@page "/"
+@using System.IO
+@using System.IO.Ports
+@using System.Text.Json
+@inject TransferApiClient Api
+@inject LiveLogStreamClient LogStream
+@inject IConfiguration Configuration
+@implements IAsyncDisposable
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="18" Style="padding-bottom:8px; margin-bottom:6px;">
+    <FluentCard Style="padding:14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <FluentLabel Typography="Typography.PaneHeader">Remote Transfer Control</FluentLabel>
+            <FluentAnchor Href="@SwaggerUrl" Target="_blank" Appearance="Appearance.Hypertext">Open Swagger</FluentAnchor>
+        </div>
+
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="10" VerticalAlignment="VerticalAlignment.Center" Style="flex-wrap:wrap; margin-top:10px;">
+            <label style="display:flex; align-items:center; gap:6px;">
+                <input type="radio" name="connectionMode" value="Tcp" checked="@(Mode == ConnectionMode.Tcp)" @onchange="OnModeChanged" />
+                <span>TCP</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:6px;">
+                <input type="radio" name="connectionMode" value="Serial" checked="@(Mode == ConnectionMode.Serial)" @onchange="OnModeChanged" />
+                <span>Serial</span>
+            </label>
+
+            <FluentButton Appearance="Appearance.Outline" Style="margin-top:12px;" @onclick="ToggleSettingsPanels">Settings</FluentButton>
+        </FluentStack>
+    </FluentCard>
+
+    @if (ShowGeneralSettings)
+    {
+        <FluentCard Style="padding:14px; margin-bottom:6px;">
+            <FluentLabel Typography="Typography.Subtitle">General settings</FluentLabel>
+            <FluentDivider Style="margin:8px 0 12px 0;" />
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; align-items:start;">
+                <div>
+                    <FluentLabel Typography="Typography.Body">Working directory on Agent</FluentLabel>
+                    <FluentTextField Placeholder="D:/project/" @bind-Value="WorkingDirectory" Style="width:100%; margin-top:4px;" />
+                </div>
+                <div>
+                    <FluentLabel Typography="Typography.Body">Allowed file extensions</FluentLabel>
+                    <FluentTextField Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Style="width:100%; margin-top:4px;" />
+                </div>
+            </div>
+
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-top:10px; flex-wrap:wrap;">
+                <FluentButton Appearance="Appearance.Accent" @onclick="SaveSettingsAsync">Save</FluentButton>
+                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload</FluentButton>
+            </FluentStack>
+
+            @if (!string.IsNullOrWhiteSpace(SettingsStatusText))
+            {
+                <div style="margin-top:8px; opacity:0.85;">@SettingsStatusText</div>
+            }
+        </FluentCard>
+    }
+
+    @if (ShowAdvancedSettings)
+    {
+        <FluentCard Style="padding:14px;margin-bottom:6px;">
+            <FluentLabel Typography="Typography.Subtitle">Connection settings</FluentLabel>
+            <FluentDivider Style="margin:8px 0 12px 0;" />
+
+            <FluentLabel Typography="Typography.Body">TCP settings</FluentLabel>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:8px 0 10px 0;">
+                <FluentTextField Label="TCP host" @bind-Value="TcpHost" Disabled="@(Mode != ConnectionMode.Tcp)" />
+                <FluentNumberField Label="TCP port" @bind-Value="TcpPort" Step="1" Disabled="@(Mode != ConnectionMode.Tcp)" />
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; opacity:@(Mode == ConnectionMode.Tcp ? "1" : "0.6")">
+                <input type="checkbox" @bind="TcpUseXonXoff" disabled="@(Mode != ConnectionMode.Tcp)" />
+                <span>Use TCP XON/XOFF flow control</span>
+            </label>
+
+            <FluentDivider Style="margin:6px 0 12px 0;" />
+
+            <FluentLabel Typography="Typography.Body">Serial settings</FluentLabel>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:8px;">
+                <FluentSelect TOption="string" Label="COM port" @bind-Value="SerialPortName" Disabled="@(Mode != ConnectionMode.Serial)">
+                    @foreach (var port in _availableComPorts)
+                    {
+                        <FluentOption TOption="string" Value="@port">@port</FluentOption>
+                    }
+                </FluentSelect>
+                <FluentSelect TOption="string" Label="Baud rate" @bind-Value="SerialBaudRate" Disabled="@(Mode != ConnectionMode.Serial)">
+                    @foreach (var baudRate in BaudRateOptions)
+                    {
+                        <FluentOption TOption="string" Value="@baudRate">@baudRate</FluentOption>
+                    }
+                </FluentSelect>
+                <FluentSelect TOption="string" Label="Parity" @bind-Value="SerialParity" Disabled="@(Mode != ConnectionMode.Serial)">
+                    @foreach (var parity in ParityOptions)
+                    {
+                        <FluentOption TOption="string" Value="@parity">@parity</FluentOption>
+                    }
+                </FluentSelect>
+                <FluentTextField Label="Data bits" @bind-Value="SerialDataBits" Disabled="@(Mode != ConnectionMode.Serial)" />
+                <FluentSelect TOption="string" Label="Stop bits" @bind-Value="SerialStopBits" Disabled="@(Mode != ConnectionMode.Serial)">
+                    @foreach (var stopBits in StopBitsOptions)
+                    {
+                        <FluentOption TOption="string" Value="@stopBits">@stopBits</FluentOption>
+                    }
+                </FluentSelect>
+                <FluentSelect TOption="string" Label="Handshake" @bind-Value="SerialHandshake" Disabled="@(Mode != ConnectionMode.Serial)">
+                    @foreach (var handshake in HandshakeOptions)
+                    {
+                        <FluentOption TOption="string" Value="@handshake">@handshake</FluentOption>
+                    }
+                </FluentSelect>
+            </div>
+
+            <FluentDivider Style="margin:10px 0;" />
+            <div style="max-width:320px;">
+                <FluentNumberField Label="Delay between lines (ms)" @bind-Value="DelayMs" Step="1" />
+            </div>
+
+            <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+                <input type="checkbox" @bind="UseOsp7000lFraming" />
+                <span>Use Okuma OSP7000L framing</span>
+            </label>
+
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-top:12px; flex-wrap:wrap;">
+                <FluentButton Appearance="Appearance.Accent" @onclick="SaveSettingsAsync">Save connection settings</FluentButton>
+                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload settings</FluentButton>
+            </FluentStack>
+        </FluentCard>
+    }
+
+    <FluentCard Style="padding:14px; margin-bottom:6px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <FluentLabel Typography="Typography.Subtitle">File browser</FluentLabel>
+            <FluentButton Appearance="Appearance.Outline" @onclick="ReloadCurrentFolderAsync">Refresh</FluentButton>
+        </div>
+        <FluentDivider Style="margin:8px 0 10px 0;" />
+
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:2px; flex-wrap:wrap; font-size:13px;">
+                @{
+                    var crumbs = GetBreadcrumbs();
+                }
+                @for (var i = 0; i < crumbs.Count; i++)
+                {
+                    var crumb = crumbs[i];
+                    <button type="button"
+                            style="border:0; background:transparent; color:inherit; padding:0 2px; text-decoration:underline; cursor:pointer;"
+                            @onclick="() => OpenFolderAsync(crumb.Path)">@crumb.Label</button>
+
+                    @if (i < crumbs.Count - 1)
+                    {
+                        <span style="opacity:0.7; padding:0 2px;">/</span>
+                    }
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(FileBrowserErrorText))
+        {
+            <div style="color:#d13438; margin-bottom:8px;">@FileBrowserErrorText</div>
+        }
+
+        <div style="border:1px solid rgba(128,128,128,0.35); border-radius:6px; max-height:260px; overflow:auto; padding:4px 8px;">
+            @if (!IsFileBrowserLoading && !string.IsNullOrWhiteSpace(CurrentFolderPath))
+            {
+                <button type="button"
+                        style="width:100%; border:0; background:transparent; color:inherit; text-align:left; padding:8px 4px; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:600;"
+                        @onclick="NavigateUpAsync">
+                    <span>📁⬆</span>
+                    <span style="opacity:0.72;">Up</span>
+                </button>
+            }
+
+            @if (IsFileBrowserLoading)
+            {
+                <div style="padding:8px 0;">Loading files...</div>
+            }
+            else if (_currentFolderItems.Count == 0)
+            {
+                <div style="padding:8px 0;">No folders or matching files.</div>
+            }
+            else
+            {
+                @foreach (var node in _currentFolderItems)
+                {
+                    var isSelected = !node.IsDirectory && string.Equals(node.RelativePath, SelectedRelativePath, StringComparison.OrdinalIgnoreCase);
+                    <button type="button"
+                            style="width:100%; border:0; background:@(isSelected ? "rgba(0,120,212,0.20)" : "transparent"); color:inherit; text-align:left; padding:8px 4px; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:8px;"
+                            @onclick="() => OnNodeClickedAsync(node)">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@(node.IsDirectory ? "📁" : "📄") @node.Name</span>
+                        <span style="opacity:0.72;">@(node.IsDirectory ? "Open" : "Select")</span>
+                    </button>
+                }
+            }
+        </div>
+
+        <div style="margin-top:10px; display:flex; align-items:flex-end; gap:8px; flex-wrap:nowrap;">
+            <div style="flex:1 1 auto; min-width:0;">
+                <FluentTextField Label="Selected NC file path"
+                                 Placeholder="Select a file from the list above"
+                                 @bind-Value="FilePath"
+                                 Style="width:100%;" />
+            </div>
+            <FluentButton Appearance="Appearance.Outline"
+                          Style="height:34px; min-width:74px; padding:0 10px; margin-bottom:2px;"
+                          @onclick="ClearSelectedFile"
+                          Disabled="@string.IsNullOrWhiteSpace(FilePath)">Clear</FluentButton>
+        </div>
+
+        @if (UseOsp7000lFraming)
+        {
+            <FluentTextField Label="Program Name" @bind-Value="ProgramName" Style="width:100%; margin-top:8px;" />
+        }
+    </FluentCard>
+
+    <FluentCard Style="padding:14px; margin-bottom:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <FluentLabel Typography="Typography.Subtitle">Transfer</FluentLabel>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="flex-wrap:wrap;">
+                <FluentButton Appearance="Appearance.Accent" @onclick="StartAsync">Start Send</FluentButton>
+                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelAsync">Cancel</FluentButton>
+                <FluentButton Appearance="Appearance.Outline" @onclick="RefreshStateAsync">Refresh State</FluentButton>
+            </FluentStack>
+        </div>
+
+        <FluentDivider Style="margin:8px 0;" />
+        <pre style="margin:0 0 12px 0; white-space:pre-wrap;">@ResponseText</pre>
+
+        <FluentLabel Typography="Typography.Subtitle">Live Log Stream</FluentLabel>
+        <FluentDivider Style="margin:8px 0;" />
+        @if (_logEntries.Count == 0)
+        {
+            <FluentLabel>Waiting for log events...</FluentLabel>
+        }
+        else
+        {
+            <div style="max-height:220px; overflow:auto; font-family:Consolas, monospace; font-size:12px;">
+                @foreach (var entry in _logEntries)
+                {
+                    <div style="color:@GetLogColor(entry.Level)">[@entry.Timestamp.ToLocalTime():HH:mm:ss] [@entry.Source] [@entry.Level] @entry.Message</div>
+                }
+            </div>
+        }
+
+    </FluentCard>
+</FluentStack>
+
+@code {
+    private const int MaxLogEntries = 250;
+
+    private ConnectionMode Mode { get; set; } = ConnectionMode.Tcp;
+    private bool ShowGeneralSettings { get; set; }
+    private bool ShowAdvancedSettings { get; set; }
+
+    private string WorkingDirectory { get; set; } = string.Empty;
+    private string FileExtensionFilter { get; set; } = "*.*";
+    private string SettingsStatusText { get; set; } = string.Empty;
+
+    private bool IsFileBrowserLoading { get; set; }
+    private string FileBrowserErrorText { get; set; } = string.Empty;
+    private string CurrentFolderPath { get; set; } = string.Empty;
+    private string SelectedRelativePath { get; set; } = string.Empty;
+    private List<FileTreeNodeDto> _currentFolderItems = [];
+
+    private string TcpHost { get; set; } = "192.168.1.50";
+    private int TcpPort { get; set; } = 23;
+    private bool TcpUseXonXoff { get; set; } = true;
+
+    private string SerialPortName { get; set; } = "COM1";
+    private string SerialBaudRate { get; set; } = "9600";
+    private string SerialDataBits { get; set; } = "8";
+    private string SerialParity { get; set; } = nameof(Parity.None);
+    private string SerialStopBits { get; set; } = nameof(StopBits.One);
+    private string SerialHandshake { get; set; } = nameof(Handshake.None);
+
+    private bool UseOsp7000lFraming { get; set; } = true;
+    private string FilePath { get; set; } = string.Empty;
+    private string ProgramName { get; set; } = string.Empty;
+    private int DelayMs { get; set; }
+    private string ResponseText { get; set; } = "Ready.";
+    private readonly List<LiveLogEntry> _logEntries = [];
+    private readonly List<string> _availableComPorts = [];
+    private string SwaggerUrl { get; set; } = string.Empty;
+
+    private static readonly string[] BaudRateOptions = ["110", "300", "600", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"];
+    private static readonly string[] ParityOptions = Enum.GetNames<Parity>();
+    private static readonly string[] StopBitsOptions = [nameof(StopBits.None), nameof(StopBits.One), nameof(StopBits.Two), nameof(StopBits.OnePointFive)];
+    private static readonly string[] HandshakeOptions = [nameof(Handshake.None), nameof(Handshake.XOnXOff), nameof(Handshake.RequestToSend), nameof(Handshake.RequestToSendXOnXOff)];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var apiBaseUrl = Configuration["Api:BaseUrl"] ?? string.Empty;
+        var apiPublicBaseUrl = Configuration["Api:PublicBaseUrl"] ?? apiBaseUrl;
+        SwaggerUrl = string.IsNullOrWhiteSpace(apiPublicBaseUrl)
+            ? "/swagger"
+            : $"{apiPublicBaseUrl.TrimEnd('/')}/swagger";
+
+        RefreshComPorts();
+        await LoadSettingsAndFilesAsync();
+
+        LogStream.LogReceived += OnLogReceived;
+        await LogStream.StartAsync();
+    }
+
+    private async Task LoadSettingsAndFilesAsync()
+    {
+        var settings = await Api.GetSettingsAsync(CancellationToken.None);
+        if (settings is null)
+        {
+            SettingsStatusText = "Unable to load settings from API.";
+            return;
+        }
+
+        WorkingDirectory = settings.WorkingDirectory;
+        FileExtensionFilter = settings.FileExtensionFilter;
+        TcpHost = settings.TcpHost;
+        TcpPort = settings.TcpPort;
+        TcpUseXonXoff = settings.TcpUseXonXoff;
+        SerialPortName = settings.SerialPortName;
+        SerialBaudRate = settings.SerialBaudRate.ToString();
+        SerialDataBits = settings.SerialDataBits.ToString();
+        SerialParity = settings.SerialParity;
+        SerialStopBits = settings.SerialStopBits;
+        SerialHandshake = settings.SerialHandshake;
+        DelayMs = settings.SendDelayMs;
+        UseOsp7000lFraming = settings.UseOsp7000lFraming;
+        SettingsStatusText = "Settings loaded.";
+
+        await OpenFolderAsync(string.Empty);
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        var request = new UpdateServiceSettingsRequest
+        {
+            WorkingDirectory = WorkingDirectory,
+            FileExtensionFilter = FileExtensionFilter,
+            TcpHost = TcpHost,
+            TcpPort = TcpPort,
+            TcpUseXonXoff = TcpUseXonXoff,
+            SerialPortName = SerialPortName,
+            SerialBaudRate = ParseIntOrDefault(SerialBaudRate, 9600),
+            SerialDataBits = ParseIntOrDefault(SerialDataBits, 8),
+            SerialParity = SerialParity,
+            SerialStopBits = SerialStopBits,
+            SerialHandshake = SerialHandshake,
+            SendDelayMs = DelayMs,
+            UseOsp7000lFraming = UseOsp7000lFraming
+        };
+
+        var updated = await Api.UpdateSettingsAsync(request, CancellationToken.None);
+        if (updated is null)
+        {
+            SettingsStatusText = "Failed to save settings.";
+            return;
+        }
+
+        SettingsStatusText = "Settings saved.";
+        WorkingDirectory = updated.WorkingDirectory;
+        FileExtensionFilter = updated.FileExtensionFilter;
+        TcpHost = updated.TcpHost;
+        TcpPort = updated.TcpPort;
+        TcpUseXonXoff = updated.TcpUseXonXoff;
+        SerialPortName = updated.SerialPortName;
+        SerialBaudRate = updated.SerialBaudRate.ToString();
+        SerialDataBits = updated.SerialDataBits.ToString();
+        SerialParity = updated.SerialParity;
+        SerialStopBits = updated.SerialStopBits;
+        SerialHandshake = updated.SerialHandshake;
+        DelayMs = updated.SendDelayMs;
+        UseOsp7000lFraming = updated.UseOsp7000lFraming;
+        await OpenFolderAsync(string.Empty);
+    }
+
+    private void ToggleSettingsPanels()
+    {
+        var show = !ShowGeneralSettings || !ShowAdvancedSettings;
+        ShowGeneralSettings = show;
+        ShowAdvancedSettings = show;
+    }
+
+    private void OnModeChanged(ChangeEventArgs e)
+    {
+        var selected = e.Value?.ToString();
+        Mode = string.Equals(selected, "Serial", StringComparison.OrdinalIgnoreCase)
+            ? ConnectionMode.Serial
+            : ConnectionMode.Tcp;
+
+        if (Mode == ConnectionMode.Serial)
+        {
+            RefreshComPorts();
+        }
+    }
+
+    private async Task OnNodeClickedAsync(FileTreeNodeDto node)
+    {
+        if (node.IsDirectory)
+        {
+            await OpenFolderAsync(node.RelativePath);
+            return;
+        }
+
+        SelectFile(node);
+    }
+
+    private async Task OpenFolderAsync(string relativePath)
+    {
+        FileBrowserErrorText = string.Empty;
+        IsFileBrowserLoading = true;
+        try
+        {
+            var items = await Api.GetDirectoryChildrenAsync(relativePath, CancellationToken.None);
+            _currentFolderItems = items
+                .OrderByDescending(node => node.IsDirectory)
+                .ThenBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            CurrentFolderPath = relativePath;
+        }
+        catch (Exception ex)
+        {
+            FileBrowserErrorText = ex.Message;
+        }
+        finally
+        {
+            IsFileBrowserLoading = false;
+        }
+    }
+
+    private Task ReloadCurrentFolderAsync()
+    {
+        return OpenFolderAsync(CurrentFolderPath);
+    }
+
+    private Task NavigateUpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentFolderPath))
+        {
+            return Task.CompletedTask;
+        }
+
+        var normalized = CurrentFolderPath.Replace('\\', '/').Trim('/');
+        var separatorIndex = normalized.LastIndexOf('/');
+        var parentPath = separatorIndex < 0 ? string.Empty : normalized[..separatorIndex];
+        return OpenFolderAsync(parentPath);
+    }
+
+    private IReadOnlyList<(string Label, string Path)> GetBreadcrumbs()
+    {
+        var crumbs = new List<(string Label, string Path)> { ("Root", string.Empty) };
+        if (string.IsNullOrWhiteSpace(CurrentFolderPath))
+        {
+            return crumbs;
+        }
+
+        var parts = CurrentFolderPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var aggregate = string.Empty;
+        foreach (var part in parts)
+        {
+            aggregate = string.IsNullOrEmpty(aggregate) ? part : $"{aggregate}/{part}";
+            crumbs.Add((part, aggregate));
+        }
+
+        return crumbs;
+    }
+
+    private void ClearSelectedFile()
+    {
+        SelectedRelativePath = string.Empty;
+        FilePath = string.Empty;
+        ProgramName = string.Empty;
+    }
+
+    private void SelectFile(FileTreeNodeDto node)
+    {
+        SelectedRelativePath = node.RelativePath;
+        FilePath = BuildAbsolutePathFromRelative(node.RelativePath);
+        if (UseOsp7000lFraming)
+        {
+            ProgramName = $"{Path.GetFileNameWithoutExtension(node.Name)}.MIL".ToUpperInvariant();
+        }
+    }
+
+    private string BuildAbsolutePathFromRelative(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(WorkingDirectory))
+        {
+            return relativePath;
+        }
+
+        var normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        return Path.Combine(WorkingDirectory, normalized);
+    }
+
+    private void RefreshComPorts()
+    {
+        var ports = SerialPort.GetPortNames();
+        Array.Sort(ports, StringComparer.OrdinalIgnoreCase);
+
+        _availableComPorts.Clear();
+        _availableComPorts.AddRange(ports);
+
+        if (_availableComPorts.Count == 0)
+        {
+            _availableComPorts.Add("COM1");
+        }
+
+        if (!_availableComPorts.Contains(SerialPortName, StringComparer.OrdinalIgnoreCase))
+        {
+            SerialPortName = _availableComPorts[0];
+        }
+    }
+
+    private void OnLogReceived(LiveLogEntry entry)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _logEntries.Insert(0, entry);
+            if (_logEntries.Count > MaxLogEntries)
+            {
+                _logEntries.RemoveRange(MaxLogEntries, _logEntries.Count - MaxLogEntries);
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task StartAsync()
+    {
+        if (string.IsNullOrWhiteSpace(FilePath))
+        {
+            ResponseText = "Select an NC file before starting transfer.";
+            return;
+        }
+
+        try
+        {
+            var request = new TransferRequest
+            {
+                Mode = Mode,
+                Tcp = new TcpConnectionOptions
+                {
+                    Host = TcpHost,
+                    Port = TcpPort,
+                    UseXonXoff = TcpUseXonXoff
+                },
+                Serial = new SerialConnectionOptions
+                {
+                    PortName = SerialPortName,
+                    BaudRate = ParseIntOrDefault(SerialBaudRate, 9600),
+                    DataBits = ParseIntOrDefault(SerialDataBits, 8),
+                    Parity = ParseEnumOrDefault(SerialParity, Parity.None),
+                    StopBits = ParseEnumOrDefault(SerialStopBits, StopBits.One),
+                    Handshake = ParseEnumOrDefault(SerialHandshake, Handshake.None)
+                },
+                Transfer = new TransferOptions
+                {
+                    FilePath = FilePath,
+                    ProgramName = string.IsNullOrWhiteSpace(ProgramName) ? null : ProgramName,
+                    SendDelayMs = DelayMs,
+                    UseOsp7000lFraming = UseOsp7000lFraming
+                }
+            };
+
+            ResponseText = FormatApiResponse(await Api.StartAsync(request, CancellationToken.None));
+        }
+        catch (Exception ex)
+        {
+            ResponseText = $"Start failed: {ex.Message}";
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        ResponseText = FormatApiResponse(await Api.CancelAsync(CancellationToken.None));
+    }
+
+    private async Task RefreshStateAsync()
+    {
+        ResponseText = FormatApiResponse(await Api.GetStateAsync(CancellationToken.None));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        LogStream.LogReceived -= OnLogReceived;
+        await LogStream.DisposeAsync();
+    }
+
+    private static int ParseIntOrDefault(string value, int fallback)
+    {
+        return int.TryParse(value, out var parsed) ? parsed : fallback;
+    }
+
+    private static TEnum ParseEnumOrDefault<TEnum>(string value, TEnum fallback) where TEnum : struct, Enum
+    {
+        return Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed) ? parsed : fallback;
+    }
+
+    private static string GetLogColor(string? level)
+    {
+        if (string.Equals(level, "Error", StringComparison.OrdinalIgnoreCase))
+        {
+            return "#ff6b6b";
+        }
+
+        if (string.Equals(level, "Warning", StringComparison.OrdinalIgnoreCase))
+        {
+            return "#ffb366";
+        }
+
+        return "inherit";
+    }
+
+    private static string FormatApiResponse(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "No response.";
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return raw;
+            }
+
+            var hasLastStatus = doc.RootElement.TryGetProperty("lastStatus", out var lastStatusProperty);
+            var hasRunning = doc.RootElement.TryGetProperty("isRunning", out var isRunningProperty);
+            var hasStartedAt = doc.RootElement.TryGetProperty("startedAt", out var startedAtProperty);
+
+            if (!hasLastStatus && !hasRunning && !hasStartedAt)
+            {
+                return raw;
+            }
+
+            var status = hasLastStatus ? lastStatusProperty.GetString() : null;
+            var isRunning = hasRunning && isRunningProperty.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? isRunningProperty.GetBoolean()
+                : (bool?)null;
+            var startedAt = hasStartedAt && startedAtProperty.ValueKind == JsonValueKind.String
+                ? startedAtProperty.GetString()
+                : null;
+
+            var lines = new List<string>();
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                lines.Add(status);
+            }
+
+            if (isRunning.HasValue)
+            {
+                lines.Add(isRunning.Value ? "Transfer is running." : "Transfer is idle.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(startedAt) && DateTimeOffset.TryParse(startedAt, out var started))
+            {
+                lines.Add($"Started: {started.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
+            }
+
+            return lines.Count > 0 ? string.Join(Environment.NewLine, lines) : raw;
+        }
+        catch
+        {
+            return raw;
+        }
+    }
+}

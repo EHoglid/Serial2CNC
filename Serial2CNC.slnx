@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Serial2CNC.Web/Serial2CNC.Web.csproj" />
+  <Project Path="Serial2CNC/Serial2CNC.csproj" />
+  <Project Path="Serial2CNC.Core/Serial2CNC.Core.csproj" />
+  <Project Path="Serial2CNC.Agent/Serial2CNC.Agent.csproj" />
+  <Project Path="Serial2CNC.Api/Serial2CNC.Api.csproj" />
+  <Project Path="Serial2CNC.Cli/Serial2CNC.Cli.csproj" />
+</Solution>

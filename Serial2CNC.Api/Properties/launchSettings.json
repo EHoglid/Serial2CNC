@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "Serial2CNC.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Agent__BaseUrl": "http://localhost:62904"
+      },
+      "applicationUrl": "https://localhost:62901;http://localhost:62902"
+    }
+  }
+}

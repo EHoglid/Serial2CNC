@@ -1,0 +1,52 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Serial2CNC.Agent/Dockerfile
+    ports:
+      - "62904:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Serial2CNC.Api/Dockerfile
+    environment:
+      Agent__BaseUrl: http://agent:8080
+    depends_on:
+      agent:
+        condition: service_healthy
+    ports:
+      - "62901:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: Serial2CNC.Web/Dockerfile
+    environment:
+      Api__BaseUrl: http://api:8080
+      Api__PublicBaseUrl: http://localhost:62901
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "62899:8080"
+      - "62903:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s

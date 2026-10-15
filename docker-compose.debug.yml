@@ -1,0 +1,57 @@
+services:
+  agent:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    volumes:
+      - ./:/src
+    command:
+      - dotnet
+      - watch
+      - run
+      - --project
+      - Serial2CNC.Agent/Serial2CNC.Agent.csproj
+      - --no-launch-profile
+      - --urls
+      - http://0.0.0.0:8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+
+  api:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    volumes:
+      - ./:/src
+    command:
+      - dotnet
+      - watch
+      - run
+      - --project
+      - Serial2CNC.Api/Serial2CNC.Api.csproj
+      - --no-launch-profile
+      - --urls
+      - http://0.0.0.0:8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      Agent__BaseUrl: http://agent:8080
+
+  web:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    volumes:
+      - ./:/src
+    command:
+      - dotnet
+      - watch
+      - run
+      - --project
+      - Serial2CNC.Web/Serial2CNC.Web.csproj
+      - --no-launch-profile
+      - --urls
+      - http://0.0.0.0:8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_USE_POLLING_FILE_WATCHER: "1"
+      Api__BaseUrl: http://api:8080
+      Api__PublicBaseUrl: http://localhost:62901
