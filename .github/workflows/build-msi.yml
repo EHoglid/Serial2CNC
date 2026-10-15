@@ -153,11 +153,23 @@ jobs:
                       throw "Anonymous service access was not rejected: $($probe.Uri)"
                   }
               }
-              $anonymousWeb = Invoke-WebRequest 'https://localhost:62899/' -SkipCertificateCheck `
-                  -MaximumRedirection 0 -SkipHttpErrorCheck
-              if ($anonymousWeb.StatusCode -notin 301, 302, 303, 307, 308 -or
-                  $anonymousWeb.Headers.Location -notmatch '(?i)login') {
-                  throw 'The Web UI did not redirect anonymous users to login.'
+              $webHandler = [System.Net.Http.HttpClientHandler]::new()
+              $webHandler.AllowAutoRedirect = $false
+              $webHandler.ServerCertificateCustomValidationCallback =
+                  [System.Net.Http.HttpClientHandler]::DangerousAcceptAnyServerCertificateValidator
+              $webClient = [System.Net.Http.HttpClient]::new($webHandler)
+              try {
+                  $anonymousWeb = $webClient.GetAsync('https://localhost:62899/').GetAwaiter().GetResult()
+                  try {
+                      if ([int]$anonymousWeb.StatusCode -notin 301, 302, 303, 307, 308 -or
+                          $anonymousWeb.Headers.Location -notmatch '(?i)login') {
+                          throw 'The Web UI did not redirect anonymous users to login.'
+                      }
+                  } finally {
+                      $anonymousWeb.Dispose()
+                  }
+              } finally {
+                  $webClient.Dispose()
               }
               $settings = Invoke-RestMethod 'http://127.0.0.1:62901/api/settings' -Headers $headers
               if ($null -eq $settings.FileExtensionFilter) {
