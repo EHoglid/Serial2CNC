@@ -73,8 +73,7 @@
 
     <DirectoryRef Id="WEBFOLDER">
       <Component Id="WebSqliteNativeComponent" Guid="e94ddecc-6102-4160-b247-92368096be3a">
-        <!-- SQLite's versioned native binary has no language resource; mark it language-neutral. -->
-        <File Id="WebSqliteNative" Source="$(var.WebPublishDir)\e_sqlite3.dll" DefaultLanguage="0" KeyPath="yes" />
+        <File Id="WebSqliteNative" Source="$(var.WebPublishDir)\e_sqlite3.dll" KeyPath="yes" />
       </Component>
       <Component Id="WebExeComponent" Guid="8b0dd889-1ac8-45eb-afa6-71ded44b2d98">
         <File Id="WebExe" Source="$(var.WebPublishDir)\Serial2CNC.Web.exe" KeyPath="yes" />
