@@ -18,7 +18,7 @@ public sealed class TransferApiClient
     {
         var client = _httpClientFactory.CreateClient("api");
         using var response = await client.GetAsync("/api/transfers/state", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, "Unable to confirm transfer state", cancellationToken);
         var state = await response.Content.ReadFromJsonAsync<TransferStateSnapshot>(cancellationToken);
         if (state is null || string.IsNullOrWhiteSpace(state.LastStatus))
         {
@@ -38,27 +38,27 @@ public sealed class TransferApiClient
     public async Task<string> StartAsync(TransferRequest request, CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("api");
-        var response = await client.PostAsJsonAsync("/api/transfers/start", request, cancellationToken);
+        using var response = await client.PostAsJsonAsync("/api/transfers/start", request, cancellationToken);
+        await EnsureSuccessAsync(response, "Unable to start transfer", cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     public async Task<string> CancelAsync(CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("api");
-        var response = await client.PostAsync("/api/transfers/cancel", null, cancellationToken);
+        using var response = await client.PostAsync("/api/transfers/cancel", null, cancellationToken);
+        await EnsureSuccessAsync(response, "Unable to cancel transfer", cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     public async Task<ServiceSettingsDto?> GetSettingsAsync(CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("api");
-        var response = await client.GetAsync("/api/settings", cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
+        using var response = await client.GetAsync("/api/settings", cancellationToken);
+        await EnsureSuccessAsync(response, "Unable to load settings", cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<ServiceSettingsDto>(cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ServiceSettingsDto>(cancellationToken)
+            ?? throw new JsonException("The API returned empty settings.");
     }
 
     public async Task<ServiceSettingsDto?> UpdateSettingsAsync(UpdateServiceSettingsRequest request, CancellationToken cancellationToken)
@@ -67,7 +67,8 @@ public sealed class TransferApiClient
         using var response = await client.PutAsJsonAsync("/api/settings", request, cancellationToken);
         await EnsureSuccessAsync(response, "Unable to save settings", cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<ServiceSettingsDto>(cancellationToken);
+        return await response.Content.ReadFromJsonAsync<ServiceSettingsDto>(cancellationToken)
+            ?? throw new JsonException("The API returned empty settings.");
     }
 
     public async Task<IReadOnlyList<FileTreeNodeDto>> GetDirectoryChildrenAsync(string? relativePath, CancellationToken cancellationToken)
@@ -88,10 +89,16 @@ public sealed class TransferApiClient
     {
         if (!response.IsSuccessStatusCode)
         {
-            var message = $"{operation} (HTTP {(int)response.StatusCode}).";
+            var message = (int)response.StatusCode >= 500
+                ? "A required service is unavailable or returned an error. Check the API and Agent services."
+                : $"{operation} (HTTP {(int)response.StatusCode}).";
             var mediaType = response.Content.Headers.ContentType?.MediaType;
-            if (mediaType is "application/problem+json" or "application/json")
+            if ((int)response.StatusCode < 500 || response.StatusCode is System.Net.HttpStatusCode.ServiceUnavailable or System.Net.HttpStatusCode.GatewayTimeout)
             {
+                if (mediaType is not ("application/problem+json" or "application/json"))
+                {
+                    throw new HttpRequestException(message, null, response.StatusCode);
+                }
                 ProblemDetails? problem;
                 try
                 {

@@ -9,6 +9,14 @@
 @implements IAsyncDisposable
 
 <div class="transfer-page">
+    @if (!string.IsNullOrWhiteSpace(StateErrorText))
+    {
+        <div class="service-banner" role="alert">
+            <strong>Service connection interrupted</strong>
+            <span>@StateErrorText</span>
+            <span>Checking automatically. An existing transfer may still be running; its state cannot currently be confirmed.</span>
+        </div>
+    }
     <FluentCard Style="padding:14px;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
             <FluentLabel Typography="Typography.PaneHeader">Remote Transfer Control</FluentLabel>
@@ -153,7 +161,7 @@
                     <span>@SettingsStatusText</span>
                     @if (SettingsHasError)
                     {
-                        <span class="settings-error-help">Check the folder path and Agent connection, then try again. Your saved settings have not changed.</span>
+                        <span class="settings-error-help">Check the folder path and service connection. If the connection was lost while saving, reload to confirm what was saved.</span>
                     }
                 </div>
             }
@@ -267,15 +275,11 @@
             <span class="status-badge" role="status">@TransferStatusLabel</span>
         </div>
         <div class="transfer-actions">
-            <FluentButton Appearance="Appearance.Accent" Disabled="@(IsTransferActionPending || TransferState?.IsRunning == true || string.IsNullOrWhiteSpace(FilePath))" @onclick="StartAsync">Start Send</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != false || string.IsNullOrWhiteSpace(FilePath))" @onclick="StartAsync">Start Send</FluentButton>
             <FluentButton Appearance="Appearance.Neutral" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != true)" @onclick="CancelAsync">Cancel</FluentButton>
             <FluentButton Appearance="Appearance.Outline" Disabled="@IsTransferActionPending" @onclick="RefreshStateAsync">Refresh State</FluentButton>
         </div>
         <p class="muted">@(TransferState?.LastStatus ?? "Transfer state has not been confirmed.")</p>
-        @if (!string.IsNullOrWhiteSpace(StateErrorText))
-        {
-            <p class="error-message" role="alert">@StateErrorText</p>
-        }
         <pre class="transfer-response" aria-live="polite">@ResponseText</pre>
         @if (_latestError is not null)
         {
@@ -285,18 +289,19 @@
             <summary>Live log stream <span class="muted">(@_logEntries.Count)</span></summary>
             @if (_logEntries.Count == 0)
             {
-                <FluentLabel>Waiting for log events...</FluentLabel>
+                <FluentLabel>@(LogStream.IsConnected ? "Waiting for log events..." : "Log stream disconnected. Reconnecting automatically.")</FluentLabel>
             }
             else
             {
                 <div class="log-entries">
                     @foreach (var entry in _logEntries)
                     {
-                        <div style="color:@GetLogColor(entry.Level)">[@entry.Timestamp.ToLocalTime():HH:mm:ss] [@entry.Source] [@entry.Level] @entry.Message</div>
+                        <div style="color:@GetLogColor(entry.Level)">[@(entry.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"))] [@entry.Source] [@entry.Level] @entry.Message</div>
                     }
                 </div>
             }
         </details>
+        <p class="log-connection" role="status">@(LogStream.IsConnected ? "Live logs connected to API." : "Live logs disconnected - reconnecting automatically.")</p>
         <details class="developer-tools">
             <summary>Developer tools</summary>
             <FluentAnchor Href="@SwaggerUrl" Target="_blank" Appearance="Appearance.Hypertext">Open Swagger</FluentAnchor>
@@ -312,6 +317,8 @@
     private TransferApiClient.TransferStateSnapshot? TransferState { get; set; }
     private bool IsTransferActionPending { get; set; }
     private string StateErrorText { get; set; } = string.Empty;
+    private bool _settingsUnavailable;
+    private bool _fileBrowserUnavailable;
     private LiveLogEntry? _latestError;
 
     private string ConnectionSummary => Mode == ConnectionMode.Tcp
@@ -333,6 +340,7 @@
     private string WorkingDirectory { get; set; } = string.Empty;
     private int _settingsLoadVersion;
     private SettingsSnapshot? _savedSettings;
+    private SettingsSnapshot? _initialSettings;
     private bool HasSettingsChanges => _savedSettings is not null && CaptureSettings() != _savedSettings;
 
     private SettingsSnapshot CaptureSettings() => new(
@@ -389,8 +397,16 @@
             : $"{apiPublicBaseUrl.TrimEnd('/')}/swagger";
 
         RefreshComPorts();
-        await LoadSettingsAndFilesAsync();
-        await UpdateTransferStateAsync(showResponse: false);
+        _initialSettings = CaptureSettings();
+        await LoadSettingsAsync(preserveEdits: true);
+        if (_settingsUnavailable)
+        {
+            StateErrorText = SettingsStatusText;
+        }
+        else
+        {
+            await UpdateTransferStateAsync(showResponse: false);
+        }
 
         LogStream.LogReceived += OnLogReceived;
         await LogStream.StartAsync();
@@ -428,11 +444,20 @@
     private async Task UpdateTransferStateAsync(bool showResponse)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_statePollCts.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
+            var recovering = TransferState is null;
             TransferState = await Api.GetStateAsync(timeout.Token);
             StateErrorText = string.Empty;
+            if (_settingsUnavailable && CaptureSettings() == _initialSettings)
+            {
+                await LoadSettingsAndFilesAsync();
+            }
+            else if (recovering && _fileBrowserUnavailable)
+            {
+                await OpenFolderAsync(CurrentFolderPath);
+            }
             if (showResponse)
             {
                 ResponseText = FormatApiResponse(JsonSerializer.Serialize(TransferState, JsonSerializerOptions.Web));
@@ -442,19 +467,46 @@
                                   && !_statePollCts.IsCancellationRequested)
         {
             TransferState = null;
-            StateErrorText = $"Unable to confirm transfer state: {ex.Message}";
-            Logger.LogWarning(ex, "Unable to refresh transfer state.");
+            var message = GetServiceErrorMessage(ex);
+            if (StateErrorText != message)
+            {
+                Logger.LogWarning(ex, "Unable to refresh transfer state.");
+            }
+            StateErrorText = message;
         }
     }
 
-    private async Task LoadSettingsAndFilesAsync()
+    private Task LoadSettingsAndFilesAsync() => LoadSettingsAsync(preserveEdits: false);
+
+    private async Task LoadSettingsAsync(bool preserveEdits)
     {
-        var settings = await Api.GetSettingsAsync(CancellationToken.None);
+        ServiceSettingsDto? settings;
+        try
+        {
+            settings = await Api.GetSettingsAsync(_statePollCts.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException
+                                  && !_statePollCts.IsCancellationRequested)
+        {
+            _settingsUnavailable = _savedSettings is null;
+            SettingsHasError = true;
+            SettingsErrorTitle = "Settings could not be loaded";
+            SettingsStatusText = GetServiceErrorMessage(ex);
+            Logger.LogWarning(ex, "Unable to load settings.");
+            return;
+        }
         if (settings is null)
         {
             SettingsHasError = true;
             SettingsErrorTitle = "Settings could not be loaded";
             SettingsStatusText = "Unable to load settings from API.";
+            return;
+        }
+
+        if (preserveEdits && CaptureSettings() != _initialSettings)
+        {
+            SettingsHasError = false;
+            SettingsStatusText = "Services are available again. Reload to load saved settings; your edits have been kept.";
             return;
         }
 
@@ -474,6 +526,7 @@
         UseOsp7000lFraming = settings.UseOsp7000lFraming;
         SettingsStatusText = "Settings loaded.";
         SettingsHasError = false;
+        _settingsUnavailable = false;
         _savedSettings = CaptureSettings();
 
         await OpenFolderAsync(string.Empty);
@@ -514,7 +567,7 @@
             SettingsErrorTitle = ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden }
                 ? "Access denied - settings not saved"
                 : "Settings not saved";
-            SettingsStatusText = ex.Message;
+            SettingsStatusText = GetServiceErrorMessage(ex);
             Logger.LogWarning(ex, "Unable to save settings.");
             return;
         }
@@ -583,6 +636,7 @@
         try
         {
             var items = await Api.GetDirectoryChildrenAsync(relativePath, CancellationToken.None);
+            _fileBrowserUnavailable = false;
             _currentFolderItems = items
                 .OrderByDescending(node => node.IsDirectory)
                 .ThenBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
@@ -592,7 +646,8 @@
         catch (Exception ex)
         {
             _currentFolderItems = [];
-            FileBrowserErrorText = ex.Message;
+            _fileBrowserUnavailable = ex is HttpRequestException http && (http.StatusCode is null || (int)http.StatusCode >= 500);
+            FileBrowserErrorText = GetServiceErrorMessage(ex);
         }
         finally
         {
@@ -705,7 +760,7 @@
 
     private async Task StartAsync()
     {
-        if (IsTransferActionPending || TransferState?.IsRunning == true)
+        if (IsTransferActionPending || TransferState?.IsRunning != false)
         {
             return;
         }
@@ -751,7 +806,9 @@
         }
         catch (Exception ex)
         {
-            ResponseText = $"Start failed: {ex.Message}";
+            ResponseText = $"Start could not be confirmed. {GetServiceErrorMessage(ex)} Check transfer state before trying again.";
+            Logger.LogWarning(ex, "Unable to start transfer.");
+            await UpdateTransferStateAsync(showResponse: false);
         }
         finally
         {
@@ -774,8 +831,9 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
-            ResponseText = $"Cancel failed: {ex.Message}";
+            ResponseText = $"Cancel could not be confirmed. {GetServiceErrorMessage(ex)} The transfer may still be running.";
             Logger.LogWarning(ex, "Unable to cancel transfer.");
+            await UpdateTransferStateAsync(showResponse: false);
         }
         finally
         {
@@ -787,6 +845,13 @@
     {
         await UpdateTransferStateAsync(showResponse: true);
     }
+
+    private static string GetServiceErrorMessage(Exception exception) => exception switch
+    {
+        JsonException => "A service returned an invalid response. Check the API and Agent logs.",
+        OperationCanceledException => "The service did not respond in time. Check the API and Agent connection.",
+        _ => exception.Message
+    };
 
     public async ValueTask DisposeAsync()
     {

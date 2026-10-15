@@ -17,6 +17,7 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
     private bool _disposed;
 
     public event Action<LiveLogEntry>? LogReceived;
+    public bool IsConnected => _connection?.State == HubConnectionState.Connected;
 
     public LiveLogStreamClient(IConfiguration configuration, NavigationManager navigationManager, ILogger<LiveLogStreamClient> logger)
     {
@@ -63,7 +64,7 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (_connection.State == HubConnectionState.Connected)
+            if (_connection.State != HubConnectionState.Disconnected)
             {
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 continue;

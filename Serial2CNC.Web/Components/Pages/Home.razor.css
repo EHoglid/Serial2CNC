@@ -75,12 +75,30 @@
     opacity: 1;
 }
 
+.service-banner {
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+    border: 1px solid currentColor;
+    border-left-width: 4px;
+    border-radius: 6px;
+    color: #b10e1c;
+    background: rgba(209, 52, 56, 0.08);
+    overflow-wrap: anywhere;
+}
+
+.log-connection {
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
 .settings-error-help {
     font-size: 0.9em;
 }
 
 @media (prefers-color-scheme: dark) {
-    .settings-error {
+    .settings-error,
+    .service-banner {
         color: #ff9a9e;
     }
 }
