@@ -34,57 +34,100 @@ Reference:
 
 - USR-W610: https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html
 
-## Setup on a computer
+## Run on Windows without Visual Studio
 
 ### Prerequisites
 
-- Windows 10/11 (recommended for WPF desktop app)
-- .NET SDK 10
-- Visual Studio 2026 (or newer) with .NET workloads
-- Optional: Docker Desktop (for compose startup)
+- Windows 10/11 or Windows Server
+- .NET 10 SDK on the computer used to publish the application (Visual Studio is not required)
+- Administrator access to install Windows services
+- A Windows service account with permission to access the CNC connection and program folder
 
-### Clone and run in Visual Studio
+The commands below publish self-contained Windows x64 applications, so the CNC computer does not need the .NET runtime installed.
 
-1. Clone repository:
+### Publish the applications
 
-   ```bash
-   git clone https://github.com/EHoglid/Serial2CNC.git
-   cd Serial2CNC
-   ```
+Clone the repository, then open PowerShell in its root folder:
 
-2. Open `Serial2CNC.slnx` in Visual Studio.
-3. Use multiple startup projects (or solution launch profile) to start:
-   1. `Serial2CNC.Agent`
-   2. `Serial2CNC.Api`
-   3. `Serial2CNC.Web`
-4. In Blazor UI, open **Settings** and configure:
-   - Working directory (for remote file browser)
-   - File extension filter (default `*.*`, or `*.nc`)
-5. In **Connection settings**, configure TCP/Serial and save.
-6. Select a file in File browser and press **Start Send**.
+```powershell
+git clone https://github.com/EHoglid/Serial2CNC.git
+Set-Location .\Serial2CNC
+```
+
+Run the following in an elevated PowerShell window to publish directly into `C:\Program Files\Serial2CNC`:
+
+```powershell
+$installRoot = Join-Path $env:ProgramFiles 'Serial2CNC'
+
+dotnet publish .\Serial2CNC.Agent\Serial2CNC.Agent.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Agent"
+dotnet publish .\Serial2CNC.Api\Serial2CNC.Api.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Api"
+dotnet publish .\Serial2CNC.Web\Serial2CNC.Web.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Web"
+```
+
+You can also publish on a build computer and copy the three output folders to the same paths on the CNC computer. The publish computer needs the .NET 10 SDK; the CNC computer does not need Visual Studio or the .NET runtime.
+
+### Install and start as Windows services
+
+Create a dedicated Windows account for the services (local or domain), grant it **Log on as a service**, and grant it read/write access to the CNC program folder. Use that same identity for all three services so the Agent can access the CNC connection and save its settings consistently. Run this in elevated PowerShell; `Get-Credential` will prompt for that account's username and password:
+
+```powershell
+$installRoot = Join-Path $env:ProgramFiles 'Serial2CNC'
+$credential = Get-Credential
+
+$agentExe = Join-Path $installRoot 'Agent\Serial2CNC.Agent.exe'
+$apiExe = Join-Path $installRoot 'Api\Serial2CNC.Api.exe'
+$webExe = Join-Path $installRoot 'Web\Serial2CNC.Web.exe'
+
+New-Service -Name 'Serial2CNC.Agent' -DisplayName 'Serial2CNC Transfer Agent' `
+    -BinaryPathName "`"$agentExe`" --urls http://127.0.0.1:62904" `
+    -Credential $credential -StartupType Automatic
+
+New-Service -Name 'Serial2CNC.Api' -DisplayName 'Serial2CNC API' `
+    -BinaryPathName "`"$apiExe`" --urls http://127.0.0.1:62901 --Agent:BaseUrl=http://127.0.0.1:62904" `
+    -Credential $credential -StartupType Automatic -DependsOn 'Serial2CNC.Agent'
+
+New-Service -Name 'Serial2CNC.Web' -DisplayName 'Serial2CNC Web UI' `
+    -BinaryPathName "`"$webExe`" --urls http://127.0.0.1:62899 --Api:BaseUrl=http://127.0.0.1:62901 --Api:PublicBaseUrl=http://127.0.0.1:62901" `
+    -Credential $credential -StartupType Automatic -DependsOn 'Serial2CNC.Api'
+
+Start-Service 'Serial2CNC.Agent'
+Start-Service 'Serial2CNC.Api'
+Start-Service 'Serial2CNC.Web'
+```
+
+Open the local web UI at <http://127.0.0.1:62899>. In **Settings**, set the working directory to the CNC program folder and choose a file-extension filter. In **Connection settings**, configure the TCP or serial connection and save. The Agent stores settings under the service account's Windows profile (`%APPDATA%\Serial2CNC\service-settings.json`).
+
+The Agent and API listen only on the local machine in this setup. Do not expose the services directly to an untrusted network: the application currently has no user authentication. For remote access, put the UI behind an appropriately secured HTTPS reverse proxy and keep the Agent/API restricted to loopback.
+
+Useful service commands (run in elevated PowerShell):
+
+```powershell
+Get-Service 'Serial2CNC.*'
+Restart-Service 'Serial2CNC.Web'
+Stop-Service 'Serial2CNC.Web', 'Serial2CNC.Api', 'Serial2CNC.Agent'
+```
+
+To uninstall, stop the services and run `sc.exe delete Serial2CNC.Web`, `sc.exe delete Serial2CNC.Api`, and `sc.exe delete Serial2CNC.Agent`. Remove the published application folders only after confirming that you no longer need them.
 
 ### Optional WPF desktop app
 
-- Set `Serial2CNC` project as startup and run.
-- The WPF app includes equivalent transfer settings and theme support.
+The WPF application is separate from the Web/API/Agent services. It can be published from the command line as a Windows desktop app:
 
-## Run locally (Visual Studio)
-
-Use the solution launch profile that starts:
-
-1. `Serial2CNC.Agent`
-2. `Serial2CNC.Api`
-3. `Serial2CNC.Web`
+```powershell
+dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true
+```
 
 ## Run with Docker Compose
 
-```bash
+Docker Compose remains an option for TCP-based deployments:
+
+```powershell
 docker compose up --build
 ```
 
 For development watch mode:
 
-```bash
+```powershell
 docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
 ```
 

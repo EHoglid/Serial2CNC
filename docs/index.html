@@ -16,7 +16,7 @@
 <body>
   <div class="wrap">
     <h1>Serial2CNC</h1>
-    <p>Send CNC files over TCP or Serial using WPF, Blazor, API, and Agent services.</p>
+    <p>Send CNC files over TCP or Serial using a Windows desktop app or a Blazor UI backed by API and Agent services.</p>
 
     <div class="card">
       <h2>Built-in CNC/Device Support</h2>
@@ -28,14 +28,15 @@
     </div>
 
     <div class="card">
-      <h2>Setup on a Computer</h2>
+      <h2>Windows setup (no Visual Studio required)</h2>
       <ol>
-        <li>Install .NET 10 SDK and Visual Studio with .NET workloads.</li>
-        <li>Clone <code>https://github.com/EHoglid/Serial2CNC.git</code>.</li>
-        <li>Open <code>Serial2CNC.slnx</code>.</li>
-        <li>Start <code>Serial2CNC.Agent</code>, <code>Serial2CNC.Api</code>, and <code>Serial2CNC.Web</code>.</li>
-        <li>Configure working directory/filter in Settings and select files from File browser.</li>
+        <li>Install the .NET 10 SDK on the computer used to publish; Visual Studio is not needed.</li>
+        <li>Clone the repository and publish the Agent, API, and Web projects as self-contained <code>win-x64</code> applications with <code>dotnet publish</code>.</li>
+        <li>Install the published applications as automatic Windows services under a dedicated account with access to the CNC connection and program folder.</li>
+        <li>Open <code>http://127.0.0.1:62899</code>, configure the working directory and TCP/Serial settings, then select a file and start the transfer.</li>
       </ol>
+      <p>The runtime computer does not need Visual Studio or the .NET runtime. See the <a href="https://github.com/EHoglid/Serial2CNC#run-on-windows-without-visual-studio">README setup guide</a> for the full PowerShell publish and Windows Service commands.</p>
+      <p><strong>Network safety:</strong> the Agent and API listen on loopback by default. The application does not provide user authentication; do not expose it directly to an untrusted network.</p>
     </div>
 
     <div class="card">

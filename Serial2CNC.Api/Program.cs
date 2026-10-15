@@ -1,8 +1,10 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.Hosting;
 using Serial2CNC.Api.Logs;
 using Serial2CNC.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 var agentBaseUrl = builder.Configuration["Agent:BaseUrl"] ?? "http://localhost:62904";
 

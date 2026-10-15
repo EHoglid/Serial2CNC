@@ -1,7 +1,9 @@
 using Serial2CNC.Agent;
 using Serial2CNC.Models;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<TransferSessionService>();

@@ -9,6 +9,7 @@
 	<ItemGroup>
 	<PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.13.0" />
 	<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
+	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
 	<ProjectReference Include="..\Serial2CNC.Core\Serial2CNC.Core.csproj" />
   </ItemGroup>
 

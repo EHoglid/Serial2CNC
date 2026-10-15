@@ -1,7 +1,9 @@
 using Serial2CNC.Web;
 using Microsoft.FluentUI.AspNetCore.Components;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 builder.Services.AddFluentUIComponents();
 
