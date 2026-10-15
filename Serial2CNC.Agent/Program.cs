@@ -1,4 +1,5 @@
 using Serial2CNC.Agent;
+using Serial2CNC.Agent.Middleware;
 using Serial2CNC.Models;
 using Microsoft.Extensions.Hosting;
 
@@ -8,8 +9,12 @@ builder.Host.UseWindowsService();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<TransferSessionService>();
 builder.Services.AddSingleton<ServiceSettingsStore>();
+builder.Services.AddExceptionHandler<FileAccessExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 app.MapGet("/", () =>
     Results.Redirect("/health"));
@@ -19,13 +24,46 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/settings", (ServiceSettingsStore settingsStore) =>
     Results.Ok(settingsStore.Get()));
 
-app.MapPut("/settings", async (UpdateServiceSettingsRequest request, ServiceSettingsStore settingsStore, CancellationToken cancellationToken) =>
+app.MapPut("/settings", async (UpdateServiceSettingsRequest request, ServiceSettingsStore settingsStore, HttpContext context, CancellationToken cancellationToken) =>
 {
+    context.Items[FileAccessExceptionHandler.RequestedPathKey] = request.WorkingDirectory?.Trim();
+    if (string.IsNullOrWhiteSpace(request.WorkingDirectory))
+    {
+        return Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+            title: "Invalid working directory", detail: "Choose an existing, accessible working directory before saving.");
+    }
+
+    try
+    {
+        var rootPath = Path.GetFullPath(request.WorkingDirectory.Trim());
+        if (!Path.IsPathFullyQualified(request.WorkingDirectory.Trim()))
+        {
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid working directory", detail: "The working directory must be an absolute path.");
+        }
+
+        if (!Directory.Exists(rootPath))
+        {
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid working directory", detail: $"The directory does not exist or is not accessible: {rootPath}");
+        }
+
+        _ = BuildChildren(rootPath, rootPath, BuildFilter(request.FileExtensionFilter));
+    }
+    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or DirectoryNotFoundException)
+    {
+        return Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+            title: "Invalid working directory", detail: $"The working directory is invalid or no longer available. {ex.Message}");
+    }
+
     var updated = await settingsStore.UpdateAsync(request, cancellationToken);
     return Results.Ok(updated);
-});
+})
+.Produces<ServiceSettingsDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status400BadRequest)
+.ProducesProblem(StatusCodes.Status403Forbidden);
 
-app.MapGet("/files/children", (string? path, ServiceSettingsStore settingsStore) =>
+app.MapGet("/files/children", (string? path, ServiceSettingsStore settingsStore, HttpContext context) =>
 {
     var settings = settingsStore.Get();
     if (string.IsNullOrWhiteSpace(settings.WorkingDirectory))
@@ -49,10 +87,13 @@ app.MapGet("/files/children", (string? path, ServiceSettingsStore settingsStore)
         return Results.NotFound(new { message = $"Directory does not exist: {resolvedPath}" });
     }
 
+    context.Items[FileAccessExceptionHandler.RequestedPathKey] = resolvedPath;
     var extensionFilter = BuildFilter(settings.FileExtensionFilter);
     var children = BuildChildren(rootPath, resolvedPath, extensionFilter);
     return Results.Ok(children);
-});
+})
+.Produces<IReadOnlyList<FileTreeNodeDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status403Forbidden);
 
 app.MapGet("/transfers/state", (TransferSessionService session) =>
     Results.Ok(session.GetState()));

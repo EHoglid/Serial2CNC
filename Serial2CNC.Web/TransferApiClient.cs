@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Serial2CNC.Models;
 
 namespace Serial2CNC.Web;
@@ -12,11 +14,25 @@ public sealed class TransferApiClient
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task<string> GetStateAsync(CancellationToken cancellationToken)
+    public async Task<TransferStateSnapshot> GetStateAsync(CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("api");
-        var response = await client.GetAsync("/api/transfers/state", cancellationToken);
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        using var response = await client.GetAsync("/api/transfers/state", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var state = await response.Content.ReadFromJsonAsync<TransferStateSnapshot>(cancellationToken);
+        if (state is null || string.IsNullOrWhiteSpace(state.LastStatus))
+        {
+            throw new JsonException("The API returned an empty or invalid transfer state.");
+        }
+
+        return state;
+    }
+
+    public sealed record TransferStateSnapshot
+    {
+        public required bool IsRunning { get; init; }
+        public DateTimeOffset? StartedAt { get; init; }
+        public required string LastStatus { get; init; }
     }
 
     public async Task<string> StartAsync(TransferRequest request, CancellationToken cancellationToken)
@@ -48,11 +64,8 @@ public sealed class TransferApiClient
     public async Task<ServiceSettingsDto?> UpdateSettingsAsync(UpdateServiceSettingsRequest request, CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("api");
-        var response = await client.PutAsJsonAsync("/api/settings", request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
+        using var response = await client.PutAsJsonAsync("/api/settings", request, cancellationToken);
+        await EnsureSuccessAsync(response, "Unable to save settings", cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<ServiceSettingsDto>(cancellationToken);
     }
@@ -64,13 +77,46 @@ public sealed class TransferApiClient
             ? "/api/files/children"
             : $"/api/files/children?path={Uri.EscapeDataString(relativePath)}";
 
-        var response = await client.GetAsync(url, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            return [];
-        }
+        using var response = await client.GetAsync(url, cancellationToken);
+        await EnsureSuccessAsync(response, "Unable to browse the requested folder", cancellationToken);
 
         var result = await response.Content.ReadFromJsonAsync<List<FileTreeNodeDto>>(cancellationToken);
-        return result ?? [];
+        return result ?? throw new JsonException("The API returned an empty folder listing response.");
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            var message = $"{operation} (HTTP {(int)response.StatusCode}).";
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            if (mediaType is "application/problem+json" or "application/json")
+            {
+                ProblemDetails? problem;
+                try
+                {
+                    problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken);
+                }
+                catch (JsonException ex)
+                {
+                    throw new HttpRequestException(message, ex, response.StatusCode);
+                }
+
+                var detail = problem?.Detail ?? problem?.Title;
+                if (string.IsNullOrWhiteSpace(detail)
+                    && problem?.Extensions.TryGetValue("message", out var legacyMessage) == true)
+                {
+                    detail = legacyMessage?.ToString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(detail))
+                {
+                    message = detail;
+                }
+            }
+
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
     }
 }

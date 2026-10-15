@@ -5,126 +5,159 @@
 @inject TransferApiClient Api
 @inject LiveLogStreamClient LogStream
 @inject IConfiguration Configuration
+@inject ILogger<Home> Logger
 @implements IAsyncDisposable
 
-<FluentStack Orientation="Orientation.Vertical" VerticalGap="18" Style="padding-bottom:8px; margin-bottom:6px;">
+<div class="transfer-page">
     <FluentCard Style="padding:14px;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
             <FluentLabel Typography="Typography.PaneHeader">Remote Transfer Control</FluentLabel>
-            <FluentAnchor Href="@SwaggerUrl" Target="_blank" Appearance="Appearance.Hypertext">Open Swagger</FluentAnchor>
         </div>
 
-        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="10" VerticalAlignment="VerticalAlignment.Center" Style="flex-wrap:wrap; margin-top:10px;">
-            <label style="display:flex; align-items:center; gap:6px;">
-                <input type="radio" name="connectionMode" value="Tcp" checked="@(Mode == ConnectionMode.Tcp)" @onchange="OnModeChanged" />
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
                 <span>TCP</span>
-            </label>
-            <label style="display:flex; align-items:center; gap:6px;">
-                <input type="radio" name="connectionMode" value="Serial" checked="@(Mode == ConnectionMode.Serial)" @onchange="OnModeChanged" />
-                <span>Serial</span>
-            </label>
+                <FluentSwitch Value="@(Mode == ConnectionMode.Serial)" ValueChanged="OnModeChanged" AriaLabel="Connection mode: off for TCP, on for Serial (COM)" />
+                <span>Serial (COM)</span>
+            </div>
 
-            <FluentButton Appearance="Appearance.Outline" Style="margin-top:12px;" @onclick="ToggleSettingsPanels">Settings</FluentButton>
-        </FluentStack>
+            <FluentButton Appearance="Appearance.Outline" AriaLabel="Settings" title="Settings" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" Style="width:44px; height:44px; min-width:44px;" @onclick="ToggleSettingsPanels">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M10 2h4l.5 3 1.5 1 3-1 2 3.5-2.5 2v3l2.5 2-2 3.5-3-1-1.5 1-.5 3h-4l-.5-3-1.5-1-3 1-2-3.5 2.5-2v-3l-2.5-2L5 5l3 1 1.5-1Z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            </FluentButton>
+        </div>
+        <p class="connection-summary"><span class="muted">Configured destination:</span> @ConnectionSummary</p>
     </FluentCard>
 
     @if (ShowGeneralSettings)
     {
-        <FluentCard Style="padding:14px; margin-bottom:6px;">
+        <FluentCard @key="_settingsLoadVersion" Id="general-settings" Style="padding:14px; margin-bottom:6px;">
             <FluentLabel Typography="Typography.Subtitle">General settings</FluentLabel>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; align-items:start;">
+            <div class="settings-grid">
                 <div>
-                    <FluentLabel Typography="Typography.Body">Working directory on Agent</FluentLabel>
-                    <FluentTextField Placeholder="D:/project/" @bind-Value="WorkingDirectory" Style="width:100%; margin-top:4px;" />
+                    <FluentTextField Label="Working directory on Agent" Placeholder="D:/project/" @bind-Value="WorkingDirectory" Immediate="true" Style="width:100%;" />
                 </div>
                 <div>
-                    <FluentLabel Typography="Typography.Body">Allowed file extensions</FluentLabel>
-                    <FluentTextField Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Style="width:100%; margin-top:4px;" />
+                    <FluentTextField Label="Allowed file extensions" Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Immediate="true" Style="width:100%;" />
                 </div>
             </div>
 
-            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-top:10px; flex-wrap:wrap;">
-                <FluentButton Appearance="Appearance.Accent" @onclick="SaveSettingsAsync">Save</FluentButton>
-                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload</FluentButton>
-            </FluentStack>
-
-            @if (!string.IsNullOrWhiteSpace(SettingsStatusText))
-            {
-                <div style="margin-top:8px; opacity:0.85;">@SettingsStatusText</div>
-            }
         </FluentCard>
     }
 
     @if (ShowAdvancedSettings)
     {
-        <FluentCard Style="padding:14px;margin-bottom:6px;">
+        <FluentCard @key="(_settingsLoadVersion, nameof(ShowAdvancedSettings))" Id="connection-settings" Style="padding:14px;margin-bottom:6px;">
             <FluentLabel Typography="Typography.Subtitle">Connection settings</FluentLabel>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
+            @if (Mode == ConnectionMode.Tcp)
+            {
             <FluentLabel Typography="Typography.Body">TCP settings</FluentLabel>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:8px 0 10px 0;">
-                <FluentTextField Label="TCP host" @bind-Value="TcpHost" Disabled="@(Mode != ConnectionMode.Tcp)" />
-                <FluentNumberField Label="TCP port" @bind-Value="TcpPort" Step="1" Disabled="@(Mode != ConnectionMode.Tcp)" />
+            <div class="settings-grid">
+                <div style="min-width:0;">
+                    <FluentTextField Label="TCP host" @bind-Value="TcpHost" Immediate="true" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
+                </div>
+                <div style="min-width:0;">
+                    <FluentNumberField Label="TCP port" @bind-Value="TcpPort" Immediate="true" Step="1" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
+                </div>
             </div>
-            <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; opacity:@(Mode == ConnectionMode.Tcp ? "1" : "0.6")">
+            <label class="checkbox-row">
                 <input type="checkbox" @bind="TcpUseXonXoff" disabled="@(Mode != ConnectionMode.Tcp)" />
                 <span>Use TCP XON/XOFF flow control</span>
             </label>
 
-            <FluentDivider Style="margin:6px 0 12px 0;" />
-
+            }
+            else
+            {
             <FluentLabel Typography="Typography.Body">Serial settings</FluentLabel>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:8px;">
-                <FluentSelect TOption="string" Label="COM port" @bind-Value="SerialPortName" Disabled="@(Mode != ConnectionMode.Serial)">
-                    @foreach (var port in _availableComPorts)
-                    {
-                        <FluentOption TOption="string" Value="@port">@port</FluentOption>
-                    }
-                </FluentSelect>
-                <FluentSelect TOption="string" Label="Baud rate" @bind-Value="SerialBaudRate" Disabled="@(Mode != ConnectionMode.Serial)">
-                    @foreach (var baudRate in BaudRateOptions)
-                    {
-                        <FluentOption TOption="string" Value="@baudRate">@baudRate</FluentOption>
-                    }
-                </FluentSelect>
-                <FluentSelect TOption="string" Label="Parity" @bind-Value="SerialParity" Disabled="@(Mode != ConnectionMode.Serial)">
-                    @foreach (var parity in ParityOptions)
-                    {
-                        <FluentOption TOption="string" Value="@parity">@parity</FluentOption>
-                    }
-                </FluentSelect>
-                <FluentTextField Label="Data bits" @bind-Value="SerialDataBits" Disabled="@(Mode != ConnectionMode.Serial)" />
-                <FluentSelect TOption="string" Label="Stop bits" @bind-Value="SerialStopBits" Disabled="@(Mode != ConnectionMode.Serial)">
-                    @foreach (var stopBits in StopBitsOptions)
-                    {
-                        <FluentOption TOption="string" Value="@stopBits">@stopBits</FluentOption>
-                    }
-                </FluentSelect>
-                <FluentSelect TOption="string" Label="Handshake" @bind-Value="SerialHandshake" Disabled="@(Mode != ConnectionMode.Serial)">
-                    @foreach (var handshake in HandshakeOptions)
-                    {
-                        <FluentOption TOption="string" Value="@handshake">@handshake</FluentOption>
-                    }
-                </FluentSelect>
+            <div class="settings-grid">
+                <div style="min-width:0;">
+                    <FluentSelect TOption="string" Label="COM port" @bind-Value="SerialPortName" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                        @foreach (var port in _availableComPorts)
+                        {
+                            <FluentOption TOption="string" Value="@port">@port</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+                <div style="min-width:0;">
+                    <FluentSelect TOption="string" Label="Baud rate" @bind-Value="SerialBaudRate" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                        @foreach (var baudRate in BaudRateOptions)
+                        {
+                            <FluentOption TOption="string" Value="@baudRate">@baudRate</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+                <div style="min-width:0;">
+                    <FluentSelect TOption="string" Label="Parity" @bind-Value="SerialParity" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                        @foreach (var parity in ParityOptions)
+                        {
+                            <FluentOption TOption="string" Value="@parity">@parity</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+                <div style="min-width:0;">
+                    <FluentTextField Label="Data bits" @bind-Value="SerialDataBits" Immediate="true" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;" />
+                </div>
+                <div style="min-width:0;">
+                    <FluentSelect TOption="string" Label="Stop bits" @bind-Value="SerialStopBits" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                        @foreach (var stopBits in StopBitsOptions)
+                        {
+                            <FluentOption TOption="string" Value="@stopBits">@stopBits</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+                <div style="min-width:0;">
+                    <FluentSelect TOption="string" Label="Handshake" @bind-Value="SerialHandshake" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                        @foreach (var handshake in HandshakeOptions)
+                        {
+                            <FluentOption TOption="string" Value="@handshake">@handshake</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
             </div>
+            }
 
-            <FluentDivider Style="margin:10px 0;" />
-            <div style="max-width:320px;">
-                <FluentNumberField Label="Delay between lines (ms)" @bind-Value="DelayMs" Step="1" />
-            </div>
-
-            <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-                <input type="checkbox" @bind="UseOsp7000lFraming" />
-                <span>Use Okuma OSP7000L framing</span>
-            </label>
-
-            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="margin-top:12px; flex-wrap:wrap;">
-                <FluentButton Appearance="Appearance.Accent" @onclick="SaveSettingsAsync">Save connection settings</FluentButton>
-                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload settings</FluentButton>
-            </FluentStack>
+            <details class="transfer-options">
+                <summary>Transfer options</summary>
+                <div class="settings-grid">
+                    <div>
+                        <FluentNumberField Label="Delay between lines (ms)" @bind-Value="DelayMs" Immediate="true" Step="1" Style="width:100%;" />
+                    </div>
+                </div>
+                <label class="checkbox-row">
+                    <input type="checkbox" @bind="UseOsp7000lFraming" />
+                    <span>Use Okuma OSP7000L framing</span>
+                </label>
+            </details>
         </FluentCard>
+    }
+    @if (ShowGeneralSettings || ShowAdvancedSettings)
+    {
+        <section aria-label="Save or reload all settings">
+            <div class="settings-actions">
+                <FluentButton Appearance="Appearance.Accent" Disabled="@(!HasSettingsChanges)" @onclick="SaveSettingsAsync">Save</FluentButton>
+                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload</FluentButton>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(SettingsStatusText))
+            {
+                <div role="@(SettingsHasError ? "alert" : "status")" class="settings-status @(SettingsHasError ? "settings-error" : null)">
+                    @if (SettingsHasError)
+                    {
+                        <strong>@SettingsErrorTitle</strong>
+                    }
+                    <span>@SettingsStatusText</span>
+                    @if (SettingsHasError)
+                    {
+                        <span class="settings-error-help">Check the folder path and Agent connection, then try again. Your saved settings have not changed.</span>
+                    }
+                </div>
+            }
+        </section>
     }
 
     <FluentCard Style="padding:14px; margin-bottom:6px;">
@@ -135,7 +168,7 @@
         <FluentDivider Style="margin:8px 0 10px 0;" />
 
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-            <div style="display:flex; align-items:center; gap:2px; flex-wrap:wrap; font-size:13px;">
+            <nav class="breadcrumbs" aria-label="File location">
                 @{
                     var crumbs = GetBreadcrumbs();
                 }
@@ -143,7 +176,7 @@
                 {
                     var crumb = crumbs[i];
                     <button type="button"
-                            style="border:0; background:transparent; color:inherit; padding:0 2px; text-decoration:underline; cursor:pointer;"
+                            class="breadcrumb"
                             @onclick="() => OpenFolderAsync(crumb.Path)">@crumb.Label</button>
 
                     @if (i < crumbs.Count - 1)
@@ -151,22 +184,25 @@
                         <span style="opacity:0.7; padding:0 2px;">/</span>
                     }
                 }
-            </div>
+            </nav>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(FileBrowserErrorText))
         {
-            <div style="color:#d13438; margin-bottom:8px;">@FileBrowserErrorText</div>
+            <div role="alert" class="error-message">@FileBrowserErrorText</div>
         }
 
         <div style="border:1px solid rgba(128,128,128,0.35); border-radius:6px; max-height:260px; overflow:auto; padding:4px 8px;">
             @if (!IsFileBrowserLoading && !string.IsNullOrWhiteSpace(CurrentFolderPath))
             {
                 <button type="button"
-                        style="width:100%; border:0; background:transparent; color:inherit; text-align:left; padding:8px 4px; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:600;"
+                        class="file-row"
                         @onclick="NavigateUpAsync">
-                    <span>📁⬆</span>
-                    <span style="opacity:0.72;">Up</span>
+                    <span class="file-name">
+                        <svg class="file-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 5v14" /></svg>
+                        Parent folder
+                    </span>
+                    <span class="muted">Up</span>
                 </button>
             }
 
@@ -176,7 +212,7 @@
             }
             else if (_currentFolderItems.Count == 0)
             {
-                <div style="padding:8px 0;">No folders or matching files.</div>
+                <div style="padding:8px 0;">@(string.IsNullOrWhiteSpace(FileBrowserErrorText) ? "No folders or matching files." : "Folder listing could not be loaded.")</div>
             }
             else
             {
@@ -184,16 +220,30 @@
                 {
                     var isSelected = !node.IsDirectory && string.Equals(node.RelativePath, SelectedRelativePath, StringComparison.OrdinalIgnoreCase);
                     <button type="button"
-                            style="width:100%; border:0; background:@(isSelected ? "rgba(0,120,212,0.20)" : "transparent"); color:inherit; text-align:left; padding:8px 4px; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:8px;"
+                            class="file-row @(isSelected ? "selected" : null)"
+                            aria-pressed="@(!node.IsDirectory ? (isSelected ? "true" : "false") : null)"
+                            title="@node.Name"
                             @onclick="() => OnNodeClickedAsync(node)">
-                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@(node.IsDirectory ? "📁" : "📄") @node.Name</span>
-                        <span style="opacity:0.72;">@(node.IsDirectory ? "Open" : "Select")</span>
+                        <span class="file-name">
+                            <svg class="file-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                @if (node.IsDirectory)
+                                {
+                                    <path d="M3 6h7l2 2h9v12H3Z" />
+                                }
+                                else
+                                {
+                                    <path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6" />
+                                }
+                            </svg>
+                            <span class="file-label">@node.Name</span>
+                        </span>
+                        <span class="file-action">@(node.IsDirectory ? "Open" : isSelected ? "Selected" : "Select")</span>
                     </button>
                 }
             }
         </div>
 
-        <div style="margin-top:10px; display:flex; align-items:flex-end; gap:8px; flex-wrap:nowrap;">
+        <div class="selected-file">
             <div style="flex:1 1 auto; min-width:0;">
                 <FluentTextField Label="Selected NC file path"
                                  Placeholder="Select a file from the list above"
@@ -201,7 +251,6 @@
                                  Style="width:100%;" />
             </div>
             <FluentButton Appearance="Appearance.Outline"
-                          Style="height:34px; min-width:74px; padding:0 10px; margin-bottom:2px;"
                           @onclick="ClearSelectedFile"
                           Disabled="@string.IsNullOrWhiteSpace(FilePath)">Clear</FluentButton>
         </div>
@@ -213,47 +262,92 @@
     </FluentCard>
 
     <FluentCard Style="padding:14px; margin-bottom:6px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div class="transfer-header">
             <FluentLabel Typography="Typography.Subtitle">Transfer</FluentLabel>
-            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8" Style="flex-wrap:wrap;">
-                <FluentButton Appearance="Appearance.Accent" @onclick="StartAsync">Start Send</FluentButton>
-                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelAsync">Cancel</FluentButton>
-                <FluentButton Appearance="Appearance.Outline" @onclick="RefreshStateAsync">Refresh State</FluentButton>
-            </FluentStack>
+            <span class="status-badge" role="status">@TransferStatusLabel</span>
         </div>
-
-        <FluentDivider Style="margin:8px 0;" />
-        <pre style="margin:0 0 12px 0; white-space:pre-wrap;">@ResponseText</pre>
-
-        <FluentLabel Typography="Typography.Subtitle">Live Log Stream</FluentLabel>
-        <FluentDivider Style="margin:8px 0;" />
-        @if (_logEntries.Count == 0)
+        <div class="transfer-actions">
+            <FluentButton Appearance="Appearance.Accent" Disabled="@(IsTransferActionPending || TransferState?.IsRunning == true || string.IsNullOrWhiteSpace(FilePath))" @onclick="StartAsync">Start Send</FluentButton>
+            <FluentButton Appearance="Appearance.Neutral" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != true)" @onclick="CancelAsync">Cancel</FluentButton>
+            <FluentButton Appearance="Appearance.Outline" Disabled="@IsTransferActionPending" @onclick="RefreshStateAsync">Refresh State</FluentButton>
+        </div>
+        <p class="muted">@(TransferState?.LastStatus ?? "Transfer state has not been confirmed.")</p>
+        @if (!string.IsNullOrWhiteSpace(StateErrorText))
         {
-            <FluentLabel>Waiting for log events...</FluentLabel>
+            <p class="error-message" role="alert">@StateErrorText</p>
         }
-        else
+        <pre class="transfer-response" aria-live="polite">@ResponseText</pre>
+        @if (_latestError is not null)
         {
-            <div style="max-height:220px; overflow:auto; font-family:Consolas, monospace; font-size:12px;">
-                @foreach (var entry in _logEntries)
-                {
-                    <div style="color:@GetLogColor(entry.Level)">[@entry.Timestamp.ToLocalTime():HH:mm:ss] [@entry.Source] [@entry.Level] @entry.Message</div>
-                }
-            </div>
+            <p class="error-message" role="alert">Latest log error: @_latestError.Message</p>
         }
+        <details class="live-logs">
+            <summary>Live log stream <span class="muted">(@_logEntries.Count)</span></summary>
+            @if (_logEntries.Count == 0)
+            {
+                <FluentLabel>Waiting for log events...</FluentLabel>
+            }
+            else
+            {
+                <div class="log-entries">
+                    @foreach (var entry in _logEntries)
+                    {
+                        <div style="color:@GetLogColor(entry.Level)">[@entry.Timestamp.ToLocalTime():HH:mm:ss] [@entry.Source] [@entry.Level] @entry.Message</div>
+                    }
+                </div>
+            }
+        </details>
+        <details class="developer-tools">
+            <summary>Developer tools</summary>
+            <FluentAnchor Href="@SwaggerUrl" Target="_blank" Appearance="Appearance.Hypertext">Open Swagger</FluentAnchor>
+        </details>
 
     </FluentCard>
-</FluentStack>
+</div>
 
 @code {
     private const int MaxLogEntries = 250;
+    private readonly CancellationTokenSource _statePollCts = new();
+    private Task? _statePollTask;
+    private TransferApiClient.TransferStateSnapshot? TransferState { get; set; }
+    private bool IsTransferActionPending { get; set; }
+    private string StateErrorText { get; set; } = string.Empty;
+    private LiveLogEntry? _latestError;
+
+    private string ConnectionSummary => Mode == ConnectionMode.Tcp
+        ? $"{TcpHost}:{TcpPort}"
+        : $"{SerialPortName} · {SerialBaudRate} baud · Data bits: {SerialDataBits} · Parity: {SerialParity} · Stop bits: {SerialStopBits}";
+
+    private string TransferStatusLabel => TransferState is null
+        ? "State unknown"
+        : TransferState.IsRunning ? "Transferring"
+        : TransferState.LastStatus.StartsWith("Transfer failed", StringComparison.OrdinalIgnoreCase) ? "Failed"
+        : TransferState.LastStatus.StartsWith("Transfer complete", StringComparison.OrdinalIgnoreCase) ? "Completed"
+        : TransferState.LastStatus.StartsWith("Transfer canceled", StringComparison.OrdinalIgnoreCase) ? "Canceled"
+        : "Idle";
 
     private ConnectionMode Mode { get; set; } = ConnectionMode.Tcp;
     private bool ShowGeneralSettings { get; set; }
     private bool ShowAdvancedSettings { get; set; }
 
     private string WorkingDirectory { get; set; } = string.Empty;
+    private int _settingsLoadVersion;
+    private SettingsSnapshot? _savedSettings;
+    private bool HasSettingsChanges => _savedSettings is not null && CaptureSettings() != _savedSettings;
+
+    private SettingsSnapshot CaptureSettings() => new(
+        WorkingDirectory, FileExtensionFilter, TcpHost, TcpPort, TcpUseXonXoff,
+        SerialPortName, SerialBaudRate, SerialDataBits, SerialParity, SerialStopBits,
+        SerialHandshake, DelayMs, UseOsp7000lFraming);
+
+    private sealed record SettingsSnapshot(
+        string WorkingDirectory, string FileExtensionFilter, string TcpHost, int TcpPort, bool TcpUseXonXoff,
+        string SerialPortName, string SerialBaudRate, string SerialDataBits, string SerialParity,
+        string SerialStopBits, string SerialHandshake, int DelayMs, bool UseOsp7000lFraming);
     private string FileExtensionFilter { get; set; } = "*.*";
     private string SettingsStatusText { get; set; } = string.Empty;
+    private bool SettingsHasError { get; set; }
+    private string SettingsErrorTitle { get; set; } = "Settings could not be loaded";
 
     private bool IsFileBrowserLoading { get; set; }
     private string FileBrowserErrorText { get; set; } = string.Empty;
@@ -296,9 +390,61 @@
 
         RefreshComPorts();
         await LoadSettingsAndFilesAsync();
+        await UpdateTransferStateAsync(showResponse: false);
 
         LogStream.LogReceived += OnLogReceived;
         await LogStream.StartAsync();
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _statePollTask = PollTransferStateAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task PollTransferStateAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_statePollCts.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await UpdateTransferStateAsync(showResponse: false);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (_statePollCts.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task UpdateTransferStateAsync(bool showResponse)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_statePollCts.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            TransferState = await Api.GetStateAsync(timeout.Token);
+            StateErrorText = string.Empty;
+            if (showResponse)
+            {
+                ResponseText = FormatApiResponse(JsonSerializer.Serialize(TransferState, JsonSerializerOptions.Web));
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException
+                                  && !_statePollCts.IsCancellationRequested)
+        {
+            TransferState = null;
+            StateErrorText = $"Unable to confirm transfer state: {ex.Message}";
+            Logger.LogWarning(ex, "Unable to refresh transfer state.");
+        }
     }
 
     private async Task LoadSettingsAndFilesAsync()
@@ -306,11 +452,14 @@
         var settings = await Api.GetSettingsAsync(CancellationToken.None);
         if (settings is null)
         {
+            SettingsHasError = true;
+            SettingsErrorTitle = "Settings could not be loaded";
             SettingsStatusText = "Unable to load settings from API.";
             return;
         }
 
         WorkingDirectory = settings.WorkingDirectory;
+        _settingsLoadVersion++;
         FileExtensionFilter = settings.FileExtensionFilter;
         TcpHost = settings.TcpHost;
         TcpPort = settings.TcpPort;
@@ -324,12 +473,19 @@
         DelayMs = settings.SendDelayMs;
         UseOsp7000lFraming = settings.UseOsp7000lFraming;
         SettingsStatusText = "Settings loaded.";
+        SettingsHasError = false;
+        _savedSettings = CaptureSettings();
 
         await OpenFolderAsync(string.Empty);
     }
 
     private async Task SaveSettingsAsync()
     {
+        if (!HasSettingsChanges)
+        {
+            return;
+        }
+
         var request = new UpdateServiceSettingsRequest
         {
             WorkingDirectory = WorkingDirectory,
@@ -347,14 +503,31 @@
             UseOsp7000lFraming = UseOsp7000lFraming
         };
 
-        var updated = await Api.UpdateSettingsAsync(request, CancellationToken.None);
+        ServiceSettingsDto? updated;
+        try
+        {
+            updated = await Api.UpdateSettingsAsync(request, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException)
+        {
+            SettingsHasError = true;
+            SettingsErrorTitle = ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden }
+                ? "Access denied - settings not saved"
+                : "Settings not saved";
+            SettingsStatusText = ex.Message;
+            Logger.LogWarning(ex, "Unable to save settings.");
+            return;
+        }
         if (updated is null)
         {
+            SettingsHasError = true;
+            SettingsErrorTitle = "Settings not saved";
             SettingsStatusText = "Failed to save settings.";
             return;
         }
 
         SettingsStatusText = "Settings saved.";
+        SettingsHasError = false;
         WorkingDirectory = updated.WorkingDirectory;
         FileExtensionFilter = updated.FileExtensionFilter;
         TcpHost = updated.TcpHost;
@@ -368,6 +541,8 @@
         SerialHandshake = updated.SerialHandshake;
         DelayMs = updated.SendDelayMs;
         UseOsp7000lFraming = updated.UseOsp7000lFraming;
+        _savedSettings = CaptureSettings();
+        _settingsLoadVersion++;
         await OpenFolderAsync(string.Empty);
     }
 
@@ -378,10 +553,9 @@
         ShowAdvancedSettings = show;
     }
 
-    private void OnModeChanged(ChangeEventArgs e)
+    private void OnModeChanged(bool useSerial)
     {
-        var selected = e.Value?.ToString();
-        Mode = string.Equals(selected, "Serial", StringComparison.OrdinalIgnoreCase)
+        Mode = useSerial
             ? ConnectionMode.Serial
             : ConnectionMode.Tcp;
 
@@ -417,6 +591,7 @@
         }
         catch (Exception ex)
         {
+            _currentFolderItems = [];
             FileBrowserErrorText = ex.Message;
         }
         finally
@@ -514,6 +689,11 @@
         _ = InvokeAsync(() =>
         {
             _logEntries.Insert(0, entry);
+            if (string.Equals(entry.Level, "Error", StringComparison.OrdinalIgnoreCase))
+            {
+                _latestError = entry;
+            }
+
             if (_logEntries.Count > MaxLogEntries)
             {
                 _logEntries.RemoveRange(MaxLogEntries, _logEntries.Count - MaxLogEntries);
@@ -525,12 +705,18 @@
 
     private async Task StartAsync()
     {
+        if (IsTransferActionPending || TransferState?.IsRunning == true)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(FilePath))
         {
             ResponseText = "Select an NC file before starting transfer.";
             return;
         }
 
+        IsTransferActionPending = true;
         try
         {
             var request = new TransferRequest
@@ -561,25 +747,56 @@
             };
 
             ResponseText = FormatApiResponse(await Api.StartAsync(request, CancellationToken.None));
+            await UpdateTransferStateAsync(showResponse: false);
         }
         catch (Exception ex)
         {
             ResponseText = $"Start failed: {ex.Message}";
         }
+        finally
+        {
+            IsTransferActionPending = false;
+        }
     }
 
     private async Task CancelAsync()
     {
-        ResponseText = FormatApiResponse(await Api.CancelAsync(CancellationToken.None));
+        if (IsTransferActionPending || TransferState?.IsRunning != true)
+        {
+            return;
+        }
+
+        IsTransferActionPending = true;
+        try
+        {
+            ResponseText = FormatApiResponse(await Api.CancelAsync(CancellationToken.None));
+            await UpdateTransferStateAsync(showResponse: false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            ResponseText = $"Cancel failed: {ex.Message}";
+            Logger.LogWarning(ex, "Unable to cancel transfer.");
+        }
+        finally
+        {
+            IsTransferActionPending = false;
+        }
     }
 
     private async Task RefreshStateAsync()
     {
-        ResponseText = FormatApiResponse(await Api.GetStateAsync(CancellationToken.None));
+        await UpdateTransferStateAsync(showResponse: true);
     }
 
     public async ValueTask DisposeAsync()
     {
+        await _statePollCts.CancelAsync();
+        if (_statePollTask is not null)
+        {
+            await _statePollTask;
+        }
+
+        _statePollCts.Dispose();
         LogStream.LogReceived -= OnLogReceived;
         await LogStream.DisposeAsync();
     }

@@ -32,13 +32,13 @@ public sealed class ServiceSettingsStore
         await _sync.WaitAsync(cancellationToken);
         try
         {
-            _settings = normalized;
-
             var directory = Path.GetDirectoryName(_settingsFilePath)!;
             Directory.CreateDirectory(directory);
 
             await using var stream = File.Create(_settingsFilePath);
-            await JsonSerializer.SerializeAsync(stream, _settings, JsonOptions, cancellationToken);
+            await JsonSerializer.SerializeAsync(stream, normalized, JsonOptions, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+            _settings = normalized;
 
             return _settings;
         }

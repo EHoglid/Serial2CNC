@@ -49,11 +49,14 @@ app.MapGet("/api/settings", async (IHttpClientFactory factory, CancellationToken
 app.MapPut("/api/settings", async (UpdateServiceSettingsRequest request, IHttpClientFactory factory, CancellationToken cancellationToken) =>
 {
     var client = factory.CreateClient("agent");
-    var response = await client.PutAsJsonAsync("/settings", request, cancellationToken);
+    using var response = await client.PutAsJsonAsync("/settings", request, cancellationToken);
     var payload = await response.Content.ReadAsStringAsync(cancellationToken);
 
-    return Results.Content(payload, "application/json", statusCode: (int)response.StatusCode);
-});
+    return Results.Content(payload, response.Content.Headers.ContentType?.MediaType ?? "application/json", statusCode: (int)response.StatusCode);
+})
+.Produces<ServiceSettingsDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status400BadRequest)
+.ProducesProblem(StatusCodes.Status403Forbidden);
 
 app.MapGet("/api/files/children", async (string? path, IHttpClientFactory factory, CancellationToken cancellationToken) =>
 {
@@ -62,11 +65,13 @@ app.MapGet("/api/files/children", async (string? path, IHttpClientFactory factor
         ? "/files/children"
         : $"/files/children?path={Uri.EscapeDataString(path)}";
 
-    var response = await client.GetAsync(url, cancellationToken);
+    using var response = await client.GetAsync(url, cancellationToken);
     var payload = await response.Content.ReadAsStringAsync(cancellationToken);
 
-    return Results.Content(payload, "application/json", statusCode: (int)response.StatusCode);
-});
+    return Results.Content(payload, response.Content.Headers.ContentType?.MediaType ?? "application/json", statusCode: (int)response.StatusCode);
+})
+.Produces<IReadOnlyList<FileTreeNodeDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status403Forbidden);
 
 app.MapPost("/api/transfers/start", async (TransferRequest request, IHttpClientFactory factory, LogBroadcastService logs, CancellationToken cancellationToken) =>
 {
