@@ -7,9 +7,17 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  cross-platform:
+    name: Cross-platform (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -20,11 +28,33 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
-        run: dotnet restore Serial2CNC.slnx
+      - name: Restore cross-platform projects
+        run: dotnet restore Serial2CNC.CrossPlatform.slnf
 
-      - name: Build
-        run: dotnet build Serial2CNC.slnx --configuration Release --no-restore
+      - name: Build cross-platform projects
+        run: dotnet build Serial2CNC.CrossPlatform.slnf --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test Serial2CNC.slnx --configuration Release --no-build --verbosity normal
+      - name: Test cross-platform projects
+        run: dotnet test Serial2CNC.CrossPlatform.slnf --configuration Release --no-build --verbosity normal
+
+  windows-desktop:
+    name: Windows desktop
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore WPF desktop app
+        run: dotnet restore Serial2CNC/Serial2CNC.csproj
+
+      - name: Build WPF desktop app
+        run: dotnet build Serial2CNC/Serial2CNC.csproj --configuration Release --no-restore
+
+      - name: Test WPF desktop app
+        run: dotnet test Serial2CNC/Serial2CNC.csproj --configuration Release --no-build --verbosity normal

@@ -170,7 +170,10 @@ Then open:
 
 ## GitHub Actions
 
-- **Build and Test** workflow for push/PR on `main`
+- **Build and Test** workflow for push/PR on `main` and manual runs:
+  - Windows and Linux jobs restore, build, and run tests for Core, Agent, API, Web, and CLI using [Serial2CNC.CrossPlatform.slnf](./Serial2CNC.CrossPlatform.slnf), excluding the Windows-only WPF app
+  - A separate Windows job restores, builds, and runs tests for the WPF desktop project
+  - The repository currently has no test projects; the test steps are ready for tests added to these build targets. Hardware-dependent serial/TCP transfers are not exercised by these jobs.
 - **Windows MSI** workflow builds on Windows for pushes/PRs on `main`, version tags, and manual runs; it verifies service installation, local endpoints/static assets, and uninstallation before uploading the MSI artifact
 - **Docker Compose Validate** workflow for compose syntax checks
 - **GitHub Pages** workflow to publish static project info page from `docs/`

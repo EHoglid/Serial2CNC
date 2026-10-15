@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "Serial2CNC.slnx",
+    "projects": [
+      "Serial2CNC.Core\\Serial2CNC.Core.csproj",
+      "Serial2CNC.Agent\\Serial2CNC.Agent.csproj",
+      "Serial2CNC.Api\\Serial2CNC.Api.csproj",
+      "Serial2CNC.Web\\Serial2CNC.Web.csproj",
+      "Serial2CNC.Cli\\Serial2CNC.Cli.csproj"
+    ]
+  }
+}
