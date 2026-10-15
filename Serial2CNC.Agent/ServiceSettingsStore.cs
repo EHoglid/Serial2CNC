@@ -14,9 +14,9 @@ public sealed class ServiceSettingsStore
     private readonly string _settingsFilePath;
     private ServiceSettingsDto _settings;
 
-    public ServiceSettingsStore()
+    public ServiceSettingsStore(string dataDirectory)
     {
-        _settingsFilePath = BuildSettingsPath();
+        _settingsFilePath = Path.Combine(dataDirectory, "service-settings.json");
         _settings = LoadFromDiskOrDefault();
     }
 
@@ -163,9 +163,4 @@ public sealed class ServiceSettingsStore
         return normalized.Length == 0 ? "*.*" : string.Join(';', normalized);
     }
 
-    private static string BuildSettingsPath()
-    {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appDataPath, "Serial2CNC", "service-settings.json");
-    }
 }

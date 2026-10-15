@@ -1,0 +1,49 @@
+@page
+@model Serial2CNC.Web.Pages.Account.UsersModel
+@{
+    ViewData["Title"] = "Accounts";
+}
+<div asp-validation-summary="All" role="alert"></div>
+@if (TempData["Status"] is string status)
+{
+    <p role="status">@status</p>
+}
+<h2>Create account</h2>
+<form method="post" asp-page-handler="Create">
+    <label for="new-user">Username</label>
+    <input id="new-user" name="UserName" required maxlength="256" autocomplete="off" />
+    <label for="new-password">Initial password</label>
+    <input id="new-password" name="NewPassword" type="password" required minlength="12" maxlength="1024" autocomplete="new-password" />
+    <label for="new-role">Role</label>
+    <select id="new-role" name="Role">
+        @foreach (var role in AccountRoles.All) { <option>@role</option> }
+    </select>
+    <div><button type="submit">Create account</button></div>
+</form>
+<h2>Existing accounts</h2>
+<p>Changing a role, disabling an account, or resetting its password invalidates its existing sessions.
+    You cannot disable or change your own role.</p>
+@foreach (var user in Model.Accounts)
+{
+    <section>
+        <h3>@user.Name (@user.Role) @(user.Disabled ? "- disabled/locked" : "")</h3>
+        <form method="post" asp-page-handler="Update">
+            <input type="hidden" name="UserId" value="@user.Id" />
+            <label for="role-@user.Id">Role</label>
+            <select id="role-@user.Id" name="Role">
+                @foreach (var role in AccountRoles.All)
+                {
+                    <option selected="@(user.Role == role)" value="@role">@role</option>
+                }
+            </select>
+            <label><input type="checkbox" name="Disabled" value="true" checked="@user.Disabled" /> Disable account</label>
+            <button type="submit">Update account</button>
+        </form>
+        <form method="post" asp-page-handler="ResetPassword">
+            <input type="hidden" name="UserId" value="@user.Id" />
+            <label for="password-@user.Id">New password</label>
+            <input id="password-@user.Id" name="NewPassword" type="password" required minlength="12" maxlength="1024" autocomplete="new-password" />
+            <button type="submit">Reset password</button>
+        </form>
+    </section>
+}

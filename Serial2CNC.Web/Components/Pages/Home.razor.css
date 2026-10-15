@@ -5,7 +5,7 @@
     min-width: 0;
 }
 
-.transfer-page ::deep fluent-card {
+.transfer-page ::deep .fluent-card {
     box-sizing: border-box;
     min-width: 0;
     width: 100%;
@@ -16,13 +16,46 @@
     z-index: 1;
 }
 
-.transfer-page ::deep fluent-button,
-.transfer-page ::deep fluent-switch {
+.transfer-page ::deep fluent-button {
     min-height: 44px;
 }
 
-.transfer-page ::deep fluent-text-field,
-.transfer-page ::deep fluent-number-field,
+.transfer-page ::deep fluent-button.settings-toggle {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+}
+
+.settings-icon,
+.settings-icon path,
+.settings-icon circle {
+    fill: none;
+}
+
+@media (pointer: coarse) {
+    .transfer-page ::deep fluent-button.settings-toggle {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+.connection-mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.transfer-page ::deep fluent-field {
+    margin-block: 0;
+}
+
+.transfer-page ::deep fluent-text-input,
+.transfer-page ::deep fluent-number-input,
 .transfer-page ::deep fluent-select {
     box-sizing: border-box;
     min-width: 0;
@@ -176,7 +209,7 @@ summary {
 
 .file-row.selected {
     background: rgba(0, 120, 212, 0.20);
-    border-color: var(--accent-fill-rest);
+    border-color: var(--colorBrandStroke1);
     font-weight: 600;
 }
 

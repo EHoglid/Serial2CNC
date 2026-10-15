@@ -71,16 +71,62 @@ jobs:
               }
               foreach ($name in 'Serial2CNC.Agent', 'Serial2CNC.Api', 'Serial2CNC.Web') {
                   $service = Get-Service -Name $name -ErrorAction Stop
-                  if ($service.Status -ne 'Running' -or $service.StartType -ne 'Automatic') {
-                      throw "$name is not running with automatic startup."
+                  if ($service.Status -ne 'Stopped' -or $service.StartType -ne 'Automatic') {
+                      throw "$name must remain stopped pending security provisioning, with automatic startup configured."
                   }
               }
-              foreach ($url in 'http://127.0.0.1:62904/health', 'http://127.0.0.1:62901/health', 'http://127.0.0.1:62899/') {
+              $installDirectory = Join-Path $env:ProgramFiles 'Serial2CNC'
+              $setupScript = Join-Path $installDirectory 'setup-security.ps1'
+              $passwordBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(48)
+              $password = 'Aa1!' + [Convert]::ToBase64String($passwordBytes)
+              Write-Output "::add-mask::$password"
+              $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+              $password = $null
+              [Array]::Clear($passwordBytes, 0, $passwordBytes.Length)
+              & $setupScript -AdminUser ciadmin -AdminPassword $securePassword
+              $dataRoot = Join-Path $env:ProgramData 'Serial2CNC'
+              $configPaths = @('Agent', 'Api', 'Web') | ForEach-Object { Join-Path $dataRoot "$_\security.json" }
+              $before = @($configPaths | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
+              $identityPath = Join-Path $dataRoot 'Web\auth.db'
+              $identityCreated = (Get-Item -LiteralPath $identityPath).CreationTimeUtc
+              # Re-running setup (including after an MSI upgrade) must not rotate keys or replace Identity.
+              & $setupScript -AdminUser ciadmin -AdminPassword $securePassword
+              $after = @($configPaths | ForEach-Object { (Get-FileHash -LiteralPath $_).Hash })
+              if (($before -join ',') -ne ($after -join ',') -or
+                  (Get-Item -LiteralPath $identityPath).CreationTimeUtc -ne $identityCreated) {
+                  throw 'Re-running provisioning changed security configuration or replaced Identity.'
+              }
+              foreach ($name in 'Serial2CNC.Agent', 'Serial2CNC.Api', 'Serial2CNC.Web') {
+                  $service = Get-Service -Name $name
+                  $account = (Get-CimInstance Win32_Service -Filter "Name='$name'").StartName
+                  if ($service.Status -ne 'Running' -or $account -ine "NT SERVICE\$name") {
+                      throw "$name is not running under its isolated virtual account."
+                  }
+              }
+              foreach ($component in 'Agent', 'Api', 'Web') {
+                  $serviceSid = ([Security.Principal.NTAccount]"NT SERVICE\Serial2CNC.$component").Translate(
+                      [Security.Principal.SecurityIdentifier]).Value
+                  $allowedSids = @('S-1-5-18', 'S-1-5-32-544', $serviceSid)
+                  $componentDirectory = Join-Path $dataRoot $component
+                  if (-not (Get-Acl -LiteralPath $componentDirectory).AreAccessRulesProtected) {
+                      throw "$component security directory still inherits broad ACLs."
+                  }
+                  foreach ($entry in @((Get-Item -LiteralPath $componentDirectory)) +
+                      @(Get-ChildItem -LiteralPath $componentDirectory -Recurse -Force)) {
+                      foreach ($rule in (Get-Acl -LiteralPath $entry.FullName).Access) {
+                          $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+                          if ($rule.AccessControlType -eq 'Allow' -and $sid -notin $allowedSids) {
+                              throw "$component security data is accessible by an unexpected principal."
+                          }
+                      }
+                  }
+              }
+              foreach ($url in 'http://127.0.0.1:62904/health', 'http://127.0.0.1:62901/health', 'https://localhost:62899/health') {
                   $response = $null
                   $lastError = $null
                   foreach ($attempt in 1..20) {
                       try {
-                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 3
+                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 3 -SkipCertificateCheck
                           break
                       } catch [System.Net.Http.HttpRequestException], [Microsoft.PowerShell.Commands.HttpResponseException] {
                           $lastError = $_
@@ -91,15 +137,33 @@ jobs:
                       throw "Endpoint check failed: $url. $lastError"
                   }
               }
-              $css = Invoke-WebRequest 'http://127.0.0.1:62899/_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css'
+              $css = Invoke-WebRequest 'https://localhost:62899/_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css' -SkipCertificateCheck
               if ($css.Headers['Content-Type'] -notmatch 'text/css') {
                   throw 'The installed Web UI is missing its static assets.'
               }
-              $settings = Invoke-RestMethod 'http://127.0.0.1:62901/api/settings'
+              $apiConfig = Get-Content -LiteralPath (Join-Path $dataRoot 'Api\security.json') -Raw | ConvertFrom-Json
+              $headers = @{ 'X-Serial2CNC-Key' = $apiConfig.ServiceAuthentication.ApiKey }
+              foreach ($probe in @(
+                  @{ Uri = 'http://127.0.0.1:62901/api/settings'; Method = 'Get' },
+                  @{ Uri = 'http://127.0.0.1:62901/hubs/logs/negotiate?negotiateVersion=1'; Method = 'Post' },
+                  @{ Uri = 'http://127.0.0.1:62904/api/settings'; Method = 'Get' }
+              )) {
+                  $anonymous = Invoke-WebRequest @probe -SkipHttpErrorCheck
+                  if ($anonymous.StatusCode -ne 401) {
+                      throw "Anonymous service access was not rejected: $($probe.Uri)"
+                  }
+              }
+              $anonymousWeb = Invoke-WebRequest 'https://localhost:62899/' -SkipCertificateCheck `
+                  -MaximumRedirection 0 -SkipHttpErrorCheck
+              if ($anonymousWeb.StatusCode -notin 301, 302, 303, 307, 308 -or
+                  $anonymousWeb.Headers.Location -notmatch '(?i)login') {
+                  throw 'The Web UI did not redirect anonymous users to login.'
+              }
+              $settings = Invoke-RestMethod 'http://127.0.0.1:62901/api/settings' -Headers $headers
               if ($null -eq $settings.FileExtensionFilter) {
                   throw 'The API cannot retrieve Agent settings.'
               }
-              $hub = Invoke-RestMethod -Method Post 'http://127.0.0.1:62901/hubs/logs/negotiate?negotiateVersion=1'
+              $hub = Invoke-RestMethod -Method Post 'http://127.0.0.1:62901/hubs/logs/negotiate?negotiateVersion=1' -Headers $headers
               if (-not $hub.connectionToken) {
                   throw 'API live-log hub negotiation failed.'
               }
@@ -121,6 +185,7 @@ jobs:
           path: |
             artifacts\installer\*.msi
             artifacts\installer\*.sha256
+            artifacts\installer\setup-security.ps1
           if-no-files-found: error
 
       - name: Upload installer logs
@@ -155,6 +220,7 @@ jobs:
           $assets = @(
               "installer\Serial2CNC-$env:MSI_VERSION-win-x64.msi"
               "installer\Serial2CNC-$env:MSI_VERSION-win-x64.msi.sha256"
+              "installer\setup-security.ps1"
           )
           gh release view $env:RELEASE_TAG
           if ($LASTEXITCODE -eq 0) {

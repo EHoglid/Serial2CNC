@@ -19,6 +19,12 @@
       </Directory>
     </StandardDirectory>
 
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="SecuritySetupComponent" Guid="6886d472-3533-4365-a736-360e04acde7c">
+        <File Id="SecuritySetupScript" Source="$(sys.SOURCEFILEDIR)..\setup-security.ps1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
     <DirectoryRef Id="AGENTFOLDER">
       <Component Id="AgentExeComponent" Guid="22cddcb2-def4-4e5b-8739-45da417d13e6">
         <File Id="AgentExe" Source="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" KeyPath="yes" />
@@ -31,11 +37,10 @@
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
-          Account="LocalSystem" />
+          Account="NT SERVICE\Serial2CNC.Agent" />
         <ServiceControl
           Id="AgentServiceControl"
           Name="Serial2CNC.Agent"
-          Start="install"
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
@@ -54,13 +59,12 @@
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
-          Account="LocalSystem">
+          Account="NT SERVICE\Serial2CNC.Api">
           <ServiceDependency Id="Serial2CNC.Agent" />
         </ServiceInstall>
         <ServiceControl
           Id="ApiServiceControl"
           Name="Serial2CNC.Api"
-          Start="install"
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
@@ -68,6 +72,10 @@
     </DirectoryRef>
 
     <DirectoryRef Id="WEBFOLDER">
+      <Component Id="WebSqliteNativeComponent" Guid="e94ddecc-6102-4160-b247-92368096be3a">
+        <!-- SQLite's versioned native binary has no language resource; mark it language-neutral. -->
+        <File Id="WebSqliteNative" Source="$(var.WebPublishDir)\e_sqlite3.dll" DefaultLanguage="0" KeyPath="yes" />
+      </Component>
       <Component Id="WebExeComponent" Guid="8b0dd889-1ac8-45eb-afa6-71ded44b2d98">
         <File Id="WebExe" Source="$(var.WebPublishDir)\Serial2CNC.Web.exe" KeyPath="yes" />
         <ServiceInstall
@@ -75,17 +83,16 @@
           Name="Serial2CNC.Web"
           DisplayName="Serial2CNC Web UI"
           Description="Serial2CNC remote web UI"
-          Arguments="--urls http://127.0.0.1:62899 --Api:BaseUrl=http://127.0.0.1:62901 --Api:PublicBaseUrl=http://127.0.0.1:62901"
+          Arguments="--Api:BaseUrl=http://127.0.0.1:62901"
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
-          Account="LocalSystem">
+          Account="NT SERVICE\Serial2CNC.Web">
           <ServiceDependency Id="Serial2CNC.Api" />
         </ServiceInstall>
         <ServiceControl
           Id="WebServiceControl"
           Name="Serial2CNC.Web"
-          Start="install"
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
@@ -96,6 +103,8 @@
       <ComponentRef Id="AgentExeComponent" />
       <ComponentRef Id="ApiExeComponent" />
       <ComponentRef Id="WebExeComponent" />
+      <ComponentRef Id="WebSqliteNativeComponent" />
+      <ComponentRef Id="SecuritySetupComponent" />
       <Files Directory="AGENTFOLDER" Include="$(var.AgentPublishDir)\**">
         <Exclude Files="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" />
       </Files>
@@ -104,6 +113,7 @@
       </Files>
       <Files Directory="WEBFOLDER" Include="$(var.WebPublishDir)\**">
         <Exclude Files="$(var.WebPublishDir)\Serial2CNC.Web.exe" />
+        <Exclude Files="$(var.WebPublishDir)\e_sqlite3.dll" />
       </Files>
     </Feature>
   </Package>

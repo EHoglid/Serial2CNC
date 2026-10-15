@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="Serial2CNC.Tests/Serial2CNC.Tests.csproj" />
+  <Project Path="Serial2CNC.Security/Serial2CNC.Security.csproj" />
   <Project Path="Serial2CNC.Web/Serial2CNC.Web.csproj" />
   <Project Path="Serial2CNC/Serial2CNC.csproj" />
   <Project Path="Serial2CNC.Core/Serial2CNC.Core.csproj" />

@@ -13,6 +13,10 @@ if ($packageVersion.Major -gt 255 -or $packageVersion.Minor -gt 255 -or $package
 $Version = $packageVersion.ToString(3)
 
 $repoRoot = $PSScriptRoot
+$setupScript = Join-Path $repoRoot 'setup-security.ps1'
+if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
+    throw 'The required standalone security provisioning script is missing.'
+}
 $publishRoot = Join-Path $repoRoot "artifacts\publish\$([guid]::NewGuid())"
 $outputRoot = Join-Path $repoRoot 'artifacts\installer'
 $buildOutput = Join-Path $publishRoot 'msi'
@@ -43,9 +47,11 @@ try {
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
     $msiPath = Join-Path $outputRoot "Serial2CNC-$Version-win-x64.msi"
     Copy-Item -LiteralPath $builtMsi -Destination $msiPath -Force
+    Copy-Item -LiteralPath $setupScript -Destination (Join-Path $outputRoot 'setup-security.ps1') -Force
     $hash = (Get-FileHash -LiteralPath $msiPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $(Split-Path -Leaf $msiPath)" | Set-Content -LiteralPath "$msiPath.sha256" -Encoding ascii
     Write-Host "Installer: $msiPath"
+    Write-Host 'After installation, run the bundled setup-security.ps1 elevated to provision security and start services.'
 }
 finally {
     if (Test-Path -LiteralPath $publishRoot) {

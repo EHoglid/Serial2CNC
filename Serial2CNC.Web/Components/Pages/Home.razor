@@ -1,4 +1,5 @@
 @page "/"
+@attribute [Authorize]
 @using System.IO
 @using System.IO.Ports
 @using System.Text.Json
@@ -6,6 +7,7 @@
 @inject LiveLogStreamClient LogStream
 @inject IConfiguration Configuration
 @inject ILogger<Home> Logger
+@inject AuthenticationStateProvider AuthenticationState
 @implements IAsyncDisposable
 
 <div class="transfer-page">
@@ -19,18 +21,18 @@
     }
     <FluentCard Style="padding:14px;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-            <FluentLabel Typography="Typography.PaneHeader">Remote Transfer Control</FluentLabel>
+            <FluentText Size="TextSize.Size500" Weight="TextWeight.Semibold">Remote Transfer Control</FluentText>
         </div>
 
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;">
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div class="connection-mode">
                 <span>TCP</span>
                 <FluentSwitch Value="@(Mode == ConnectionMode.Serial)" ValueChanged="OnModeChanged" AriaLabel="Connection mode: off for TCP, on for Serial (COM)" />
                 <span>Serial (COM)</span>
             </div>
 
-            <FluentButton Appearance="Appearance.Outline" AriaLabel="Settings" title="Settings" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" Style="width:44px; height:44px; min-width:44px;" @onclick="ToggleSettingsPanels">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <FluentButton Class="settings-toggle" Appearance="ButtonAppearance.Outline" Disabled="@(!CanAdminister)" aria-label="Settings" Title="Settings (Administrator)" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" OnClick="ToggleSettingsPanels">
+                <svg class="settings-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <path d="M10 2h4l.5 3 1.5 1 3-1 2 3.5-2.5 2v3l2.5 2-2 3.5-3-1-1.5 1-.5 3h-4l-.5-3-1.5-1-3 1-2-3.5 2.5-2v-3l-2.5-2L5 5l3 1 1.5-1Z" />
                     <circle cx="12" cy="12" r="3" />
                 </svg>
@@ -39,39 +41,39 @@
         <p class="connection-summary"><span class="muted">Configured destination:</span> @ConnectionSummary</p>
     </FluentCard>
 
-    @if (ShowGeneralSettings)
+    @if (ShowGeneralSettings && CanAdminister)
     {
         <FluentCard @key="_settingsLoadVersion" Id="general-settings" Style="padding:14px; margin-bottom:6px;">
-            <FluentLabel Typography="Typography.Subtitle">General settings</FluentLabel>
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">General settings</FluentText>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
             <div class="settings-grid">
                 <div>
-                    <FluentTextField Label="Working directory on Agent" Placeholder="D:/project/" @bind-Value="WorkingDirectory" Immediate="true" Style="width:100%;" />
+                    <FluentTextInput Label="Working directory on Agent" Placeholder="D:/project/" @bind-Value="WorkingDirectory" Immediate="true" Style="width:100%;" />
                 </div>
                 <div>
-                    <FluentTextField Label="Allowed file extensions" Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Immediate="true" Style="width:100%;" />
+                    <FluentTextInput Label="Allowed file extensions" Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Immediate="true" Style="width:100%;" />
                 </div>
             </div>
 
         </FluentCard>
     }
 
-    @if (ShowAdvancedSettings)
+    @if (ShowAdvancedSettings && CanAdminister)
     {
         <FluentCard @key="(_settingsLoadVersion, nameof(ShowAdvancedSettings))" Id="connection-settings" Style="padding:14px;margin-bottom:6px;">
-            <FluentLabel Typography="Typography.Subtitle">Connection settings</FluentLabel>
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">Connection settings</FluentText>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
             @if (Mode == ConnectionMode.Tcp)
             {
-            <FluentLabel Typography="Typography.Body">TCP settings</FluentLabel>
+            <FluentLabel>TCP settings</FluentLabel>
             <div class="settings-grid">
                 <div style="min-width:0;">
-                    <FluentTextField Label="TCP host" @bind-Value="TcpHost" Immediate="true" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
+                    <FluentTextInput Label="TCP host" @bind-Value="TcpHost" Immediate="true" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
                 </div>
                 <div style="min-width:0;">
-                    <FluentNumberField Label="TCP port" @bind-Value="TcpPort" Immediate="true" Step="1" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
+                    <FluentNumberInput TValue="int" Label="TCP port" @bind-Value="TcpPort" Immediate="true" Step="1" Disabled="@(Mode != ConnectionMode.Tcp)" Style="width:100%; min-width:0;" />
                 </div>
             </div>
             <label class="checkbox-row">
@@ -82,48 +84,48 @@
             }
             else
             {
-            <FluentLabel Typography="Typography.Body">Serial settings</FluentLabel>
+            <FluentLabel>Serial settings</FluentLabel>
             <div class="settings-grid">
                 <div style="min-width:0;">
-                    <FluentSelect TOption="string" Label="COM port" @bind-Value="SerialPortName" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                    <FluentSelect TOption="string" TValue="string" Label="COM port" @bind-Value="SerialPortName" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
                         @foreach (var port in _availableComPorts)
                         {
-                            <FluentOption TOption="string" Value="@port">@port</FluentOption>
+                            <FluentOption TValue="string" Value="@port">@port</FluentOption>
                         }
                     </FluentSelect>
                 </div>
                 <div style="min-width:0;">
-                    <FluentSelect TOption="string" Label="Baud rate" @bind-Value="SerialBaudRate" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                    <FluentSelect TOption="string" TValue="string" Label="Baud rate" @bind-Value="SerialBaudRate" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
                         @foreach (var baudRate in BaudRateOptions)
                         {
-                            <FluentOption TOption="string" Value="@baudRate">@baudRate</FluentOption>
+                            <FluentOption TValue="string" Value="@baudRate">@baudRate</FluentOption>
                         }
                     </FluentSelect>
                 </div>
                 <div style="min-width:0;">
-                    <FluentSelect TOption="string" Label="Parity" @bind-Value="SerialParity" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                    <FluentSelect TOption="string" TValue="string" Label="Parity" @bind-Value="SerialParity" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
                         @foreach (var parity in ParityOptions)
                         {
-                            <FluentOption TOption="string" Value="@parity">@parity</FluentOption>
+                            <FluentOption TValue="string" Value="@parity">@parity</FluentOption>
                         }
                     </FluentSelect>
                 </div>
                 <div style="min-width:0;">
-                    <FluentTextField Label="Data bits" @bind-Value="SerialDataBits" Immediate="true" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;" />
+                    <FluentTextInput Label="Data bits" @bind-Value="SerialDataBits" Immediate="true" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;" />
                 </div>
                 <div style="min-width:0;">
-                    <FluentSelect TOption="string" Label="Stop bits" @bind-Value="SerialStopBits" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                    <FluentSelect TOption="string" TValue="string" Label="Stop bits" @bind-Value="SerialStopBits" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
                         @foreach (var stopBits in StopBitsOptions)
                         {
-                            <FluentOption TOption="string" Value="@stopBits">@stopBits</FluentOption>
+                            <FluentOption TValue="string" Value="@stopBits">@stopBits</FluentOption>
                         }
                     </FluentSelect>
                 </div>
                 <div style="min-width:0;">
-                    <FluentSelect TOption="string" Label="Handshake" @bind-Value="SerialHandshake" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
+                    <FluentSelect TOption="string" TValue="string" Label="Handshake" @bind-Value="SerialHandshake" Disabled="@(Mode != ConnectionMode.Serial)" Style="width:100%; min-width:0;">
                         @foreach (var handshake in HandshakeOptions)
                         {
-                            <FluentOption TOption="string" Value="@handshake">@handshake</FluentOption>
+                            <FluentOption TValue="string" Value="@handshake">@handshake</FluentOption>
                         }
                     </FluentSelect>
                 </div>
@@ -134,7 +136,7 @@
                 <summary>Transfer options</summary>
                 <div class="settings-grid">
                     <div>
-                        <FluentNumberField Label="Delay between lines (ms)" @bind-Value="DelayMs" Immediate="true" Step="1" Style="width:100%;" />
+                        <FluentNumberInput TValue="int" Label="Delay between lines (ms)" @bind-Value="DelayMs" Immediate="true" Step="1" Style="width:100%;" />
                     </div>
                 </div>
                 <label class="checkbox-row">
@@ -144,12 +146,12 @@
             </details>
         </FluentCard>
     }
-    @if (ShowGeneralSettings || ShowAdvancedSettings)
+    @if ((ShowGeneralSettings || ShowAdvancedSettings) && CanAdminister)
     {
         <section aria-label="Save or reload all settings">
             <div class="settings-actions">
-                <FluentButton Appearance="Appearance.Accent" Disabled="@(!HasSettingsChanges)" @onclick="SaveSettingsAsync">Save</FluentButton>
-                <FluentButton Appearance="Appearance.Outline" @onclick="LoadSettingsAndFilesAsync">Reload</FluentButton>
+                <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(!HasSettingsChanges)" OnClick="SaveSettingsAsync">Save</FluentButton>
+                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="LoadSettingsAndFilesAsync">Reload</FluentButton>
             </div>
             @if (!string.IsNullOrWhiteSpace(SettingsStatusText))
             {
@@ -170,8 +172,8 @@
 
     <FluentCard Style="padding:14px; margin-bottom:6px;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-            <FluentLabel Typography="Typography.Subtitle">File browser</FluentLabel>
-            <FluentButton Appearance="Appearance.Outline" @onclick="ReloadCurrentFolderAsync">Refresh</FluentButton>
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">File browser</FluentText>
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="ReloadCurrentFolderAsync">Refresh</FluentButton>
         </div>
         <FluentDivider Style="margin:8px 0 10px 0;" />
 
@@ -253,31 +255,31 @@
 
         <div class="selected-file">
             <div style="flex:1 1 auto; min-width:0;">
-                <FluentTextField Label="Selected NC file path"
+                <FluentTextInput Label="Selected NC file path"
                                  Placeholder="Select a file from the list above"
                                  @bind-Value="FilePath"
                                  Style="width:100%;" />
             </div>
-            <FluentButton Appearance="Appearance.Outline"
-                          @onclick="ClearSelectedFile"
+            <FluentButton Appearance="ButtonAppearance.Outline"
+                          OnClick="ClearSelectedFile"
                           Disabled="@string.IsNullOrWhiteSpace(FilePath)">Clear</FluentButton>
         </div>
 
         @if (UseOsp7000lFraming)
         {
-            <FluentTextField Label="Program Name" @bind-Value="ProgramName" Style="width:100%; margin-top:8px;" />
+            <FluentTextInput Label="Program Name" @bind-Value="ProgramName" Style="width:100%; margin-top:8px;" />
         }
     </FluentCard>
 
     <FluentCard Style="padding:14px; margin-bottom:6px;">
         <div class="transfer-header">
-            <FluentLabel Typography="Typography.Subtitle">Transfer</FluentLabel>
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">Transfer</FluentText>
             <span class="status-badge" role="status">@TransferStatusLabel</span>
         </div>
         <div class="transfer-actions">
-            <FluentButton Appearance="Appearance.Accent" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != false || string.IsNullOrWhiteSpace(FilePath))" @onclick="StartAsync">Start Send</FluentButton>
-            <FluentButton Appearance="Appearance.Neutral" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != true)" @onclick="CancelAsync">Cancel</FluentButton>
-            <FluentButton Appearance="Appearance.Outline" Disabled="@IsTransferActionPending" @onclick="RefreshStateAsync">Refresh State</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(!CanOperate || IsTransferActionPending || TransferState?.IsRunning != false || string.IsNullOrWhiteSpace(FilePath))" OnClick="StartAsync">Start Send</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" Disabled="@(!CanOperate || IsTransferActionPending || TransferState?.IsRunning != true)" OnClick="CancelAsync">Cancel</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Outline" Disabled="@IsTransferActionPending" OnClick="RefreshStateAsync">Refresh State</FluentButton>
         </div>
         <pre class="transfer-response @(ResponseHasError ? "transfer-error" : null)" role="@(ResponseHasError ? "alert" : "status")" aria-live="polite">@ResponseText</pre>
         <details class="live-logs">
@@ -297,15 +299,13 @@
             }
         </details>
         <p class="log-connection" role="status">@(LogStream.IsConnected ? "Live logs connected to API." : "Live logs disconnected - reconnecting automatically.")</p>
-        <details class="developer-tools">
-            <summary>Developer tools</summary>
-            <FluentAnchor Href="@SwaggerUrl" Target="_blank" Appearance="Appearance.Hypertext">Open Swagger</FluentAnchor>
-        </details>
 
     </FluentCard>
 </div>
 
 @code {
+    private bool CanAdminister;
+    private bool CanOperate;
     private const int MaxLogEntries = 250;
     private readonly CancellationTokenSource _statePollCts = new();
     private Task? _statePollTask;
@@ -376,7 +376,6 @@
     private string ResponseText { get; set; } = "Ready.";
     private readonly List<LiveLogEntry> _logEntries = [];
     private readonly List<string> _availableComPorts = [];
-    private string SwaggerUrl { get; set; } = string.Empty;
 
     private static readonly string[] BaudRateOptions = ["110", "300", "600", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"];
     private static readonly string[] ParityOptions = Enum.GetNames<Parity>();
@@ -385,11 +384,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var apiBaseUrl = Configuration["Api:BaseUrl"] ?? string.Empty;
-        var apiPublicBaseUrl = Configuration["Api:PublicBaseUrl"] ?? apiBaseUrl;
-        SwaggerUrl = string.IsNullOrWhiteSpace(apiPublicBaseUrl)
-            ? "/swagger"
-            : $"{apiPublicBaseUrl.TrimEnd('/')}/swagger";
+        var user = (await AuthenticationState.GetAuthenticationStateAsync()).User;
+        CanAdminister = user.IsInRole(AccountRoles.Administrator);
+        CanOperate = CanAdminister || user.IsInRole(AccountRoles.Operator);
 
         RefreshComPorts();
         _initialSettings = CaptureSettings();

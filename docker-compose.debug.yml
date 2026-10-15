@@ -54,4 +54,3 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
       Api__BaseUrl: http://api:8080
-      Api__PublicBaseUrl: http://localhost:62901

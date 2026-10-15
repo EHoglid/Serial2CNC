@@ -7,10 +7,14 @@
   </PropertyGroup>
 
 	<ItemGroup>
-	<PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.13.0" />
-	<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
-	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+	<PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.1" />
+	<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+	<PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.13" />
+	<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+	<PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
 	<ProjectReference Include="..\Serial2CNC.Core\Serial2CNC.Core.csproj" />
+	<ProjectReference Include="..\Serial2CNC.Security\Serial2CNC.Security.csproj" />
   </ItemGroup>
 
 </Project>

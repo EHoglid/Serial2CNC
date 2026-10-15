@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR;
+using Serial2CNC.Security;
+using Serial2CNC.Web.Security;
 
 namespace Serial2CNC.Web;
 
@@ -15,15 +17,17 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
     private Task? _connectLoopTask;
     private DateTimeOffset _lastUnavailableLogUtc;
     private bool _disposed;
+    private readonly UserAccess _access;
 
     public event Action<LiveLogEntry>? LogReceived;
     public bool IsConnected => _connection?.State == HubConnectionState.Connected;
 
-    public LiveLogStreamClient(IConfiguration configuration, NavigationManager navigationManager, ILogger<LiveLogStreamClient> logger)
+    public LiveLogStreamClient(IConfiguration configuration, NavigationManager navigationManager, ILogger<LiveLogStreamClient> logger, UserAccess access)
     {
         _configuration = configuration;
         _navigationManager = navigationManager;
         _logger = logger;
+        _access = access;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -39,16 +43,28 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
         }
 
         _initialized = true;
+        await _access.RequireAsync();
 
         var apiBaseUrl = _configuration["Api:BaseUrl"] ?? _navigationManager.BaseUri;
         var hubUrl = $"{apiBaseUrl.TrimEnd('/')}/hubs/logs";
 
         _connection = new HubConnectionBuilder()
-            .WithUrl(hubUrl)
+            .WithUrl(hubUrl, options => options.Headers.Add(ServiceSecurity.HeaderName, _configuration.RequireKey("Api:ApiKey")))
             .WithAutomaticReconnect()
             .Build();
 
-        _connection.On<LiveLogEntry>("log", entry => LogReceived?.Invoke(entry));
+        _connection.On<LiveLogEntry>("log", async entry =>
+        {
+            try
+            {
+                await _access.RequireAsync();
+                LogReceived?.Invoke(entry);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogInformation("Discarded log event for an expired or unauthorized session.");
+            }
+        });
 
         _connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _connectLoopTask = RunConnectLoopAsync(_connectCts.Token);
@@ -66,6 +82,16 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
         {
             if (_connection.State != HubConnectionState.Disconnected)
             {
+                try
+                {
+                    await _access.RequireAsync();
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                {
+                    _logger.LogInformation("Stopping live logs because the user session is no longer authorized.");
+                    await _connection.StopAsync(cancellationToken);
+                    return;
+                }
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 continue;
             }
@@ -75,12 +101,18 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(1));
 
+                await _access.RequireAsync();
                 await _connection.StartAsync(timeoutCts.Token);
                 _logger.LogInformation("Connected to API live log stream.");
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 LogUnavailableOnce();
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogWarning("Live log authentication failed; sign in again or check the service credential.");
+                return;
             }
             catch (HttpRequestException)
             {

@@ -2,21 +2,27 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Serial2CNC.Models;
+using Serial2CNC.Security;
+using Serial2CNC.Web.Security;
 
 namespace Serial2CNC.Web;
 
 public sealed class TransferApiClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly UserAccess _access;
+    private readonly ILogger<TransferApiClient> _logger;
 
-    public TransferApiClient(IHttpClientFactory httpClientFactory)
+    public TransferApiClient(IHttpClientFactory httpClientFactory, UserAccess access, ILogger<TransferApiClient> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _access = access;
+        _logger = logger;
     }
 
     public async Task<TransferStateSnapshot> GetStateAsync(CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Viewer);
         using var response = await client.GetAsync("/api/transfers/state", cancellationToken);
         await EnsureSuccessAsync(response, "Unable to confirm transfer state", cancellationToken);
         var state = await response.Content.ReadFromJsonAsync<TransferStateSnapshot>(cancellationToken);
@@ -37,7 +43,7 @@ public sealed class TransferApiClient
 
     public async Task<string> StartAsync(TransferRequest request, CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Operator, "start transfer");
         using var response = await client.PostAsJsonAsync("/api/transfers/start", request, cancellationToken);
         await EnsureSuccessAsync(response, "Unable to start transfer", cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -45,7 +51,7 @@ public sealed class TransferApiClient
 
     public async Task<string> CancelAsync(CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Operator, "cancel transfer");
         using var response = await client.PostAsync("/api/transfers/cancel", null, cancellationToken);
         await EnsureSuccessAsync(response, "Unable to cancel transfer", cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -53,7 +59,7 @@ public sealed class TransferApiClient
 
     public async Task<ServiceSettingsDto?> GetSettingsAsync(CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Viewer);
         using var response = await client.GetAsync("/api/settings", cancellationToken);
         await EnsureSuccessAsync(response, "Unable to load settings", cancellationToken);
 
@@ -63,7 +69,7 @@ public sealed class TransferApiClient
 
     public async Task<ServiceSettingsDto?> UpdateSettingsAsync(UpdateServiceSettingsRequest request, CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Administrator, "save settings");
         using var response = await client.PutAsJsonAsync("/api/settings", request, cancellationToken);
         await EnsureSuccessAsync(response, "Unable to save settings", cancellationToken);
 
@@ -73,7 +79,7 @@ public sealed class TransferApiClient
 
     public async Task<IReadOnlyList<FileTreeNodeDto>> GetDirectoryChildrenAsync(string? relativePath, CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient("api");
+        var client = await CreateClientAsync(AccountRoles.Viewer);
         var url = string.IsNullOrWhiteSpace(relativePath)
             ? "/api/files/children"
             : $"/api/files/children?path={Uri.EscapeDataString(relativePath)}";
@@ -83,6 +89,18 @@ public sealed class TransferApiClient
 
         var result = await response.Content.ReadFromJsonAsync<List<FileTreeNodeDto>>(cancellationToken);
         return result ?? throw new JsonException("The API returned an empty folder listing response.");
+    }
+
+    private async Task<HttpClient> CreateClientAsync(string role, string? operation = null)
+    {
+        var principal = await _access.RequireAsync(role);
+        var client = _httpClientFactory.CreateClient("api");
+        client.DefaultRequestHeaders.Add(ServiceSecurity.ActorHeader, principal.Identity!.Name);
+        if (operation is not null)
+        {
+            _logger.LogInformation("User {User} requested {Operation}.", principal.Identity.Name, operation);
+        }
+        return client;
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)

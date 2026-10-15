@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] - Serial2CNC</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+        label { display: block; margin-top: 1rem; } input, select, button { font: inherit; padding: .5rem; max-width: 100%; }
+        button { margin-top: 1rem; } .validation-summary-errors, .field-validation-error { color: #b00020; }
+        table { border-collapse: collapse; width: 100%; } td, th { padding: .5rem; text-align: left; border-bottom: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>@ViewData["Title"]</h1>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <nav><a href="/">Transfers</a> | <a href="/Account/Password">Change password</a>
+            @if (User.IsInRole(AccountRoles.Administrator))
+            {
+                <span> | <a href="/Account/Users">Accounts</a></span>
+            }
+        </nav>
+    }
+    @RenderBody()
+</body>
+</html>

@@ -8,9 +8,10 @@
 
   <ItemGroup>
 	<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
-	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
-	<PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
+	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
+	<PackageReference Include="Swashbuckle.AspNetCore" Version="10.3.0" />
 	<ProjectReference Include="..\Serial2CNC.Core\Serial2CNC.Core.csproj" />
+	<ProjectReference Include="..\Serial2CNC.Security\Serial2CNC.Security.csproj" />
   </ItemGroup>
 
 </Project>

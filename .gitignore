@@ -246,6 +246,12 @@ ClientBin/
 *.dbproj.schemaview
 *.jfm
 *.pfx
+security.json
+auth.db
+auth.db-shm
+auth.db-wal
+auth.db-journal
+DataProtection/
 *.publishsettings
 orleans.codegen.cs
 

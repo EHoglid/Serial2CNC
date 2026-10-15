@@ -2,24 +2,29 @@ using Serial2CNC.Agent;
 using Serial2CNC.Agent.Middleware;
 using Serial2CNC.Models;
 using Microsoft.Extensions.Hosting;
+using Serial2CNC.Security;
 
 var builder = WebApplication.CreateBuilder(args);
+var dataDirectory = builder.LoadSecurityConfiguration("Agent", args);
+builder.AddServiceAuthentication("http://127.0.0.1:62904");
 builder.Host.UseWindowsService();
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<TransferSessionService>();
-builder.Services.AddSingleton<ServiceSettingsStore>();
+builder.Services.AddSingleton(new ServiceSettingsStore(dataDirectory));
 builder.Services.AddExceptionHandler<FileAccessExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/", () =>
     Results.Redirect("/health"));
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
 app.MapGet("/settings", (ServiceSettingsStore settingsStore) =>
     Results.Ok(settingsStore.Get()));
@@ -98,9 +103,45 @@ app.MapGet("/files/children", (string? path, ServiceSettingsStore settingsStore,
 app.MapGet("/transfers/state", (TransferSessionService session) =>
     Results.Ok(session.GetState()));
 
-app.MapPost("/transfers/start", async (TransferRequest request, TransferSessionService session, CancellationToken cancellationToken) =>
+app.MapPost("/transfers/start", async (TransferRequest request, TransferSessionService session, ServiceSettingsStore settingsStore, HttpContext context, CancellationToken cancellationToken) =>
 {
-    var started = await session.TryStartAsync(request, cancellationToken);
+    var settings = settingsStore.Get();
+    if (!Enum.IsDefined(request.Mode) || string.IsNullOrWhiteSpace(settings.WorkingDirectory))
+    {
+        return Results.Problem(statusCode: 400, title: "Invalid transfer",
+            detail: "Choose a valid transfer mode and configure the working directory first.");
+    }
+    var root = Path.GetFullPath(settings.WorkingDirectory);
+    if (!TryResolvePath(root, request.Transfer.FilePath, out var filePath, out var error))
+    {
+        return Results.Problem(statusCode: 400, title: "Invalid transfer path", detail: error);
+    }
+    var filter = BuildFilter(settings.FileExtensionFilter);
+    if (!File.Exists(filePath) || (filter.Count > 0 && !filter.Contains(Path.GetExtension(filePath).ToLowerInvariant())))
+    {
+        return Results.Problem(statusCode: 400, title: "Invalid transfer file",
+            detail: "Select an existing file with an allowed extension in the configured working directory.");
+    }
+    context.Items[FileAccessExceptionHandler.RequestedPathKey] = filePath;
+    // Remote operators select files, not arbitrary network destinations or serial-port configurations.
+    var approvedRequest = new TransferRequest
+    {
+        Mode = request.Mode,
+        Tcp = new TcpConnectionOptions { Host = settings.TcpHost, Port = settings.TcpPort, UseXonXoff = settings.TcpUseXonXoff },
+        Serial = new SerialConnectionOptions
+        {
+            PortName = settings.SerialPortName, BaudRate = settings.SerialBaudRate, DataBits = settings.SerialDataBits,
+            Parity = Enum.Parse<System.IO.Ports.Parity>(settings.SerialParity),
+            StopBits = Enum.Parse<System.IO.Ports.StopBits>(settings.SerialStopBits),
+            Handshake = Enum.Parse<System.IO.Ports.Handshake>(settings.SerialHandshake)
+        },
+        Transfer = new TransferOptions
+        {
+            FilePath = filePath, ProgramName = request.Transfer.ProgramName,
+            SendDelayMs = settings.SendDelayMs, UseOsp7000lFraming = settings.UseOsp7000lFraming
+        }
+    };
+    var started = await session.TryStartAsync(approvedRequest, cancellationToken);
     return started
         ? Results.Accepted("/transfers/state", session.GetState())
         : Results.Conflict(new { message = "A transfer is already running." });
@@ -120,15 +161,36 @@ app.Run();
 static bool TryResolvePath(string rootPath, string? relativePath, out string resolvedPath, out string error)
 {
     var safeRelativePath = (relativePath ?? string.Empty).Replace('/', Path.DirectorySeparatorChar).Trim();
-    resolvedPath = Path.GetFullPath(Path.Combine(rootPath, safeRelativePath));
+    try
+    {
+        resolvedPath = Path.GetFullPath(Path.Combine(rootPath, safeRelativePath));
+    }
+    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+    {
+        resolvedPath = string.Empty;
+        error = "The requested path is invalid.";
+        return false;
+    }
 
     var normalizedRoot = rootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
     var normalizedResolved = resolvedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
 
-    if (!normalizedResolved.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+    if (!normalizedResolved.StartsWith(normalizedRoot,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
     {
         error = "The requested path is outside of the configured working directory.";
         return false;
+    }
+    var relative = Path.GetRelativePath(rootPath, resolvedPath);
+    var candidate = rootPath;
+    foreach (var part in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+    {
+        candidate = Path.Combine(candidate, part);
+        if (Path.Exists(candidate) && (File.GetAttributes(candidate) & FileAttributes.ReparsePoint) != 0)
+        {
+            error = "Links and junctions inside the working directory cannot be browsed or transferred.";
+            return false;
+        }
     }
 
     error = string.Empty;
