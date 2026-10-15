@@ -183,8 +183,7 @@ static bool DirectoryHasVisibleChildren(string directoryPath, HashSet<string> ex
     }
 
     return Directory.EnumerateFiles(directoryPath)
-        .Select(Path.GetExtension)
-        .Select(extension => extension.ToLowerInvariant())
+        .Select(filePath => Path.GetExtension(filePath).ToLowerInvariant())
         .Any(extensionFilter.Contains);
 }
 

@@ -28,13 +28,12 @@
     </div>
 
     <div class="card">
-      <h2>Windows setup (no Visual Studio required)</h2>
+      <h2>Windows setup</h2>
       <ol>
         <li>Download the Windows x64 MSI from <a href="https://github.com/EHoglid/Serial2CNC/releases/latest">GitHub Releases</a>, once a version is released.</li>
         <li>Run the MSI and approve the administrator prompt. It installs the Agent, API, and Web as automatic Windows services, running even when nobody is logged on.</li>
         <li>Open <code>http://127.0.0.1:62899</code>, configure the working directory and TCP/Serial settings, then select a file and start the transfer.</li>
       </ol>
-      <p>No Visual Studio, SDK, or .NET runtime is needed on the CNC computer. The UI opens in a browser; this is not a tray/taskbar app. Uninstall through Windows Installed apps.</p>
       <p>For unreleased builds, download and unzip an installer artifact from a successful <a href="https://github.com/EHoglid/Serial2CNC/actions/workflows/build-msi.yml">Windows MSI workflow</a> run (GitHub sign-in required). Installers are currently unsigned; only install trusted builds.</p>
       <p>See the <a href="https://github.com/EHoglid/Serial2CNC#run-on-windows-without-visual-studio">README setup guide</a> for checksum verification, building an MSI yourself, release instructions, and manual service-account installation.</p>
       <p><strong>Network safety:</strong> the MSI services use the highly privileged LocalSystem account and listen only on loopback. The application does not provide user authentication; keep it on a trusted computer and do not expose it directly to an untrusted network.</p>
