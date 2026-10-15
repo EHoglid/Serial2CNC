@@ -30,7 +30,7 @@ Built-in support includes:
 - Live transfer log stream
 - Responsive Web UI with mode-specific connection settings, touch-friendly controls, and a configured-destination summary
 - Transfer state refreshes every three seconds; Cancel is enabled only for a confirmed active transfer. This state does not indicate a persistent CNC connection.
-- Expand **Transfer options** for line delay/framing and **Live log stream** for diagnostic logs. The latest log error remains visible when logs are collapsed; Swagger is under **Developer tools**.
+- Expand **Transfer options** for line delay/framing and **Live log stream** for diagnostic logs. Transfer status updates in a single formatted block, with failures shown in red without a duplicate error summary; Swagger is under **Developer tools**.
 - Folder access denied by the Agent's operating-system account returns HTTP **403 Forbidden**. The GUI identifies the folder you requested, not an internal child folder; technical exception details remain in the Agent logs. Listing a drive root may also fail when checking a restricted child folder; choose an accessible CNC program folder or grant the service account appropriate access.
 - Settings saves validate that the working directory is absolute, exists, and can be browsed before updating the saved configuration. Invalid paths return **400** and permission failures return **403**; rejected saves leave the previous settings unchanged.
 - One shared **Save / Reload** row applies to all settings. Save is enabled only for changes since the last successful load/save; Reload is always available and discards unsaved edits. The TCP/Serial mode toggle selects the transfer mode and is not a persisted setting.

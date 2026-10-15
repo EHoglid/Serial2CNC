@@ -242,6 +242,16 @@ summary {
     margin: 12px 0;
 }
 
+.transfer-error {
+    color: #b10e1c;
+}
+
+@media (prefers-color-scheme: dark) {
+    .transfer-error {
+        color: #ff9a9e;
+    }
+}
+
 .log-entries {
     max-height: 220px;
     overflow: auto;

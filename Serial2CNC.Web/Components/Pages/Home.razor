@@ -279,12 +279,7 @@
             <FluentButton Appearance="Appearance.Neutral" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != true)" @onclick="CancelAsync">Cancel</FluentButton>
             <FluentButton Appearance="Appearance.Outline" Disabled="@IsTransferActionPending" @onclick="RefreshStateAsync">Refresh State</FluentButton>
         </div>
-        <p class="muted">@(TransferState?.LastStatus ?? "Transfer state has not been confirmed.")</p>
-        <pre class="transfer-response" aria-live="polite">@ResponseText</pre>
-        @if (_latestError is not null)
-        {
-            <p class="error-message" role="alert">Latest log error: @_latestError.Message</p>
-        }
+        <pre class="transfer-response @(ResponseHasError ? "transfer-error" : null)" role="@(ResponseHasError ? "alert" : "status")" aria-live="polite">@ResponseText</pre>
         <details class="live-logs">
             <summary>Live log stream <span class="muted">(@_logEntries.Count)</span></summary>
             @if (_logEntries.Count == 0)
@@ -319,7 +314,7 @@
     private string StateErrorText { get; set; } = string.Empty;
     private bool _settingsUnavailable;
     private bool _fileBrowserUnavailable;
-    private LiveLogEntry? _latestError;
+    private bool ResponseHasError { get; set; }
 
     private string ConnectionSummary => Mode == ConnectionMode.Tcp
         ? $"{TcpHost}:{TcpPort}"
@@ -448,7 +443,9 @@
         try
         {
             var recovering = TransferState is null;
-            TransferState = await Api.GetStateAsync(timeout.Token);
+            var state = await Api.GetStateAsync(timeout.Token);
+            var stateChanged = state != TransferState;
+            TransferState = state;
             StateErrorText = string.Empty;
             if (_settingsUnavailable && CaptureSettings() == _initialSettings)
             {
@@ -458,9 +455,10 @@
             {
                 await OpenFolderAsync(CurrentFolderPath);
             }
-            if (showResponse)
+            if (showResponse || stateChanged)
             {
                 ResponseText = FormatApiResponse(JsonSerializer.Serialize(TransferState, JsonSerializerOptions.Web));
+                ResponseHasError = TransferState.LastStatus.StartsWith("Transfer failed", StringComparison.OrdinalIgnoreCase);
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException
@@ -744,11 +742,6 @@
         _ = InvokeAsync(() =>
         {
             _logEntries.Insert(0, entry);
-            if (string.Equals(entry.Level, "Error", StringComparison.OrdinalIgnoreCase))
-            {
-                _latestError = entry;
-            }
-
             if (_logEntries.Count > MaxLogEntries)
             {
                 _logEntries.RemoveRange(MaxLogEntries, _logEntries.Count - MaxLogEntries);
@@ -768,6 +761,7 @@
         if (string.IsNullOrWhiteSpace(FilePath))
         {
             ResponseText = "Select an NC file before starting transfer.";
+            ResponseHasError = true;
             return;
         }
 
@@ -802,11 +796,13 @@
             };
 
             ResponseText = FormatApiResponse(await Api.StartAsync(request, CancellationToken.None));
+            ResponseHasError = false;
             await UpdateTransferStateAsync(showResponse: false);
         }
         catch (Exception ex)
         {
             ResponseText = $"Start could not be confirmed. {GetServiceErrorMessage(ex)} Check transfer state before trying again.";
+            ResponseHasError = true;
             Logger.LogWarning(ex, "Unable to start transfer.");
             await UpdateTransferStateAsync(showResponse: false);
         }
@@ -827,11 +823,13 @@
         try
         {
             ResponseText = FormatApiResponse(await Api.CancelAsync(CancellationToken.None));
+            ResponseHasError = false;
             await UpdateTransferStateAsync(showResponse: false);
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
             ResponseText = $"Cancel could not be confirmed. {GetServiceErrorMessage(ex)} The transfer may still be running.";
+            ResponseHasError = true;
             Logger.LogWarning(ex, "Unable to cancel transfer.");
             await UpdateTransferStateAsync(showResponse: false);
         }
