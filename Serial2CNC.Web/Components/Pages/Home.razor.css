@@ -77,12 +77,26 @@
     min-width: 0;
 }
 
+.settings-group {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.settings-footer {
+    padding: 0 14px 4px;
+}
+
 .settings-actions,
 .transfer-actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
     margin-top: 12px;
+}
+
+.settings-footer .settings-actions {
+    margin-top: 0;
 }
 
 .connection-summary {

@@ -41,9 +41,12 @@
         <p class="connection-summary"><span class="muted">Configured destination:</span> @ConnectionSummary</p>
     </FluentCard>
 
-    @if (ShowGeneralSettings && CanAdminister)
+    @if ((ShowGeneralSettings || ShowAdvancedSettings) && CanAdminister)
     {
-        <FluentCard @key="_settingsLoadVersion" Id="general-settings" Style="padding:14px; margin-bottom:6px;">
+    <div class="settings-group">
+    @if (ShowGeneralSettings)
+    {
+        <FluentCard @key="_settingsLoadVersion" Id="general-settings" Style="padding:14px;">
             <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">General settings</FluentText>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
@@ -59,9 +62,9 @@
         </FluentCard>
     }
 
-    @if (ShowAdvancedSettings && CanAdminister)
+    @if (ShowAdvancedSettings)
     {
-        <FluentCard @key="(_settingsLoadVersion, nameof(ShowAdvancedSettings))" Id="connection-settings" Style="padding:14px;margin-bottom:6px;">
+        <FluentCard @key="(_settingsLoadVersion, nameof(ShowAdvancedSettings))" Id="connection-settings" Style="padding:14px;">
             <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">Connection settings</FluentText>
             <FluentDivider Style="margin:8px 0 12px 0;" />
 
@@ -146,9 +149,7 @@
             </details>
         </FluentCard>
     }
-    @if ((ShowGeneralSettings || ShowAdvancedSettings) && CanAdminister)
-    {
-        <section aria-label="Save or reload all settings">
+        <section class="settings-footer" aria-label="Save or reload all settings">
             <div class="settings-actions">
                 <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(!HasSettingsChanges)" OnClick="SaveSettingsAsync">Save</FluentButton>
                 <FluentButton Appearance="ButtonAppearance.Outline" OnClick="LoadSettingsAndFilesAsync">Reload</FluentButton>
@@ -168,6 +169,7 @@
                 </div>
             }
         </section>
+    </div>
     }
 
     <FluentCard Style="padding:14px; margin-bottom:6px;">
