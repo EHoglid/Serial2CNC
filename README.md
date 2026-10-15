@@ -177,6 +177,7 @@ Then open:
 - **Windows MSI** workflow builds on Windows for pushes/PRs on `main`, version tags, and manual runs; it verifies service installation, local endpoints/static assets, and uninstallation before uploading the MSI artifact
 - **Docker Compose Validate** workflow for compose syntax checks
 - **GitHub Pages** workflow to publish static project info page from `docs/`
+- **Automatic Dependency Submission (NuGet)** can restore the WPF project on Linux because it enables `EnableWindowsTargeting`. This allows dependency analysis on non-Windows runners; the desktop app still requires Windows to run.
 
 ### Publish a downloadable installer
 
