@@ -186,6 +186,7 @@ Then open:
 - **Docker Compose Validate** workflow for compose syntax checks
 - **GitHub Pages** workflow to publish static project info page from `docs/`
 - **Automatic Dependency Submission (NuGet)** can restore the WPF project on Linux because it enables `EnableWindowsTargeting`. This allows dependency analysis on non-Windows runners; the desktop app still requires Windows to run.
+- Project files live in their respective project folders. Do not add an empty root-level `Serial2CNC.csproj`: automatic dependency submission discovers every `.csproj` file and fails when restoring an invalid one.
 
 ### Publish a downloadable installer
 
