@@ -132,15 +132,19 @@ app.MapPost("/transfers/start", async (TransferRequest request, TransferSessionS
         Tcp = new TcpConnectionOptions { Host = settings.TcpHost, Port = settings.TcpPort, UseXonXoff = settings.TcpUseXonXoff },
         Serial = new SerialConnectionOptions
         {
-            PortName = settings.SerialPortName, BaudRate = settings.SerialBaudRate, DataBits = settings.SerialDataBits,
+            PortName = settings.SerialPortName,
+            BaudRate = settings.SerialBaudRate,
+            DataBits = settings.SerialDataBits,
             Parity = Enum.Parse<System.IO.Ports.Parity>(settings.SerialParity),
             StopBits = Enum.Parse<System.IO.Ports.StopBits>(settings.SerialStopBits),
             Handshake = Enum.Parse<System.IO.Ports.Handshake>(settings.SerialHandshake)
         },
         Transfer = new TransferOptions
         {
-            FilePath = filePath, ProgramName = request.Transfer.ProgramName,
-            SendDelayMs = settings.SendDelayMs, UseOsp7000lFraming = settings.UseOsp7000lFraming
+            FilePath = filePath,
+            ProgramName = request.Transfer.ProgramName,
+            SendDelayMs = settings.SendDelayMs,
+            UseOsp7000lFraming = settings.UseOsp7000lFraming
         }
     };
     var started = await session.TryStartAsync(approvedRequest, cancellationToken);
@@ -162,7 +166,19 @@ app.Run();
 
 static bool TryResolvePath(string rootPath, string? relativePath, out string resolvedPath, out string error)
 {
-    var safeRelativePath = (relativePath ?? string.Empty).Replace('/', Path.DirectorySeparatorChar).Trim();
+    var safeRelativePath = (relativePath ?? string.Empty)
+        .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+        .Replace('/', Path.DirectorySeparatorChar)
+        .Replace('\\', Path.DirectorySeparatorChar)
+        .Trim();
+    if (Path.IsPathRooted(safeRelativePath)
+        || safeRelativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Any(part => part == ".."))
+    {
+        resolvedPath = string.Empty;
+        error = "The requested path must be relative and cannot contain parent-directory components.";
+        return false;
+    }
+
     try
     {
         resolvedPath = Path.GetFullPath(Path.Combine(rootPath, safeRelativePath));
