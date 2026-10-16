@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Serial2CNC.Logging;
 
 namespace Serial2CNC.Agent.Middleware;
 
@@ -17,7 +18,8 @@ internal sealed class FileAccessExceptionHandler(ILogger<FileAccessExceptionHand
             return false;
         }
 
-        logger.LogWarning(exception, "File system access denied for {RequestPath}.", httpContext.Request.Path);
+        var requestPath = LogValueSanitizer.Sanitize(httpContext.Request.Path.Value);
+        logger.LogWarning(exception, "File system access denied for {RequestPath}.", requestPath);
 
         var requestedPath = httpContext.Items[RequestedPathKey] as string;
         var detail = string.IsNullOrWhiteSpace(requestedPath)

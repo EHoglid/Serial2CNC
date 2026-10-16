@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
+using Serial2CNC.Logging;
 
 namespace Serial2CNC.Api.Middleware;
 
@@ -13,7 +14,8 @@ internal sealed class AgentUnavailableExceptionHandler(ILogger<AgentUnavailableE
         }
 
         var timedOut = exception is OperationCanceledException;
-        logger.LogWarning(exception, "Agent request failed for {RequestPath}.", context.Request.Path);
+        var requestPath = LogValueSanitizer.Sanitize(context.Request.Path.Value);
+        logger.LogWarning(exception, "Agent request failed for {RequestPath}.", requestPath);
         await Results.Problem(
             statusCode: timedOut ? StatusCodes.Status504GatewayTimeout : StatusCodes.Status503ServiceUnavailable,
             title: timedOut ? "Agent not responding" : "Agent unavailable",
