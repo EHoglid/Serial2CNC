@@ -1,5 +1,4 @@
 @inherits LayoutComponentBase
-@inject IThemeService ThemeService
 
 <div style="max-width: 980px; margin: 16px auto; padding: 0 12px 16px 12px;">
     <main>
@@ -8,13 +7,3 @@
 </div>
 
 <FluentProviders />
-
-@code {
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await ThemeService.SetThemeAsync(ThemeMode.System);
-        }
-    }
-}
