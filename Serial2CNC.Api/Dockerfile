@@ -3,7 +3,6 @@ WORKDIR /src
 
 COPY ["Serial2CNC.Api/Serial2CNC.Api.csproj", "Serial2CNC.Api/"]
 COPY ["Serial2CNC.Core/Serial2CNC.Core.csproj", "Serial2CNC.Core/"]
-COPY ["Serial2CNC.Security/Serial2CNC.Security.csproj", "Serial2CNC.Security/"]
 RUN dotnet restore "Serial2CNC.Api/Serial2CNC.Api.csproj"
 
 COPY . .

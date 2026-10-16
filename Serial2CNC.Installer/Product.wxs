@@ -20,8 +20,8 @@
     </StandardDirectory>
 
     <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="SecuritySetupComponent" Guid="6886d472-3533-4365-a736-360e04acde7c">
-        <File Id="SecuritySetupScript" Source="$(sys.SOURCEFILEDIR)..\setup-security.ps1" KeyPath="yes" />
+      <Component Id="ServiceSetupComponent" Guid="6886d472-3533-4365-a736-360e04acde7c">
+        <File Id="ServiceSetupScript" Source="$(sys.SOURCEFILEDIR)..\setup-services.ps1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
@@ -72,10 +72,6 @@
     </DirectoryRef>
 
     <DirectoryRef Id="WEBFOLDER">
-      <Component Id="WebSqliteNativeComponent" Guid="e94ddecc-6102-4160-b247-92368096be3a">
-        <!-- MSI requires a language for versioned files; SQLite has no language resource. -->
-        <File Id="WebSqliteNative" Source="$(var.WebPublishDir)\e_sqlite3.dll" DefaultLanguage="0" KeyPath="yes" />
-      </Component>
       <Component Id="WebExeComponent" Guid="8b0dd889-1ac8-45eb-afa6-71ded44b2d98">
         <File Id="WebExe" Source="$(var.WebPublishDir)\Serial2CNC.Web.exe" KeyPath="yes" />
         <ServiceInstall
@@ -103,8 +99,7 @@
       <ComponentRef Id="AgentExeComponent" />
       <ComponentRef Id="ApiExeComponent" />
       <ComponentRef Id="WebExeComponent" />
-      <ComponentRef Id="WebSqliteNativeComponent" />
-      <ComponentRef Id="SecuritySetupComponent" />
+      <ComponentRef Id="ServiceSetupComponent" />
       <Files Directory="AGENTFOLDER" Include="$(var.AgentPublishDir)\**">
         <Exclude Files="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" />
       </Files>
@@ -113,7 +108,6 @@
       </Files>
       <Files Directory="WEBFOLDER" Include="$(var.WebPublishDir)\**">
         <Exclude Files="$(var.WebPublishDir)\Serial2CNC.Web.exe" />
-        <Exclude Files="$(var.WebPublishDir)\e_sqlite3.dll" />
       </Files>
     </Feature>
   </Package>

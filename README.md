@@ -20,46 +20,19 @@ Built-in support includes:
 
 `Blazor UI -> API -> Agent -> CNC`
 
-## Authentication and LAN access
+## Network access
 
-Only the Web UI should be reachable from the LAN, over HTTPS on port **62899**.
-API (62901) and Agent (62904) remain on loopback. Do not forward these ports
-through your router; internet-connected LANs are not a trust boundary.
-
-The Web UI uses local ASP.NET Core Identity accounts with hashed passwords,
-antiforgery-protected forms, secure HttpOnly cookies, an eight-hour session limit,
-and lockout after five failed password attempts for fifteen minutes. Account
-requests are also rate limited by source address. There is no public registration.
-
-| Role | Permissions |
-| --- | --- |
-| Viewer | Browse program files, see transfer state and live logs |
-| Operator | Viewer permissions plus start/cancel transfers |
-| Administrator | Operator permissions plus settings and account management |
-
-Administrators manage users at **Accounts**; any user can change their password.
-Role changes, disabling accounts, password changes/resets, and logout invalidate
-existing sessions. Logout invalidates all sessions for that account. Interactive
-pages revalidate sessions every thirty seconds, and service actions validate the
-current account/role before sending requests. Hiding a button is not the security
-boundary.
-
-Web-to-API and API-to-Agent use different randomly generated service keys, including
-SignalR connections. Keys remain server-side; they are not user credentials.
-Requests without valid keys return **401**. Only the minimal `/health` responses
-are anonymous. Swagger is disabled outside Development. API service keys identify
-trusted applications: do not give them to browser users or independent desktop
-clients.
+The Web UI is available on HTTPS port **62899**. API (62901) and Agent (62904)
+remain on loopback. The Web UI has no login or account management, and internal
+service requests do not use API keys. Use it only on a trusted private network;
+do not expose the Web UI or service ports to the public internet.
 
 The Agent accepts transfer files only within the configured program folder,
 applies the extension filter, rejects links/junctions below that folder, and uses
-the saved connection/delay/framing settings. Administrators must **Save** settings
-before sending; a request cannot override the configured CNC destination. Logs
-record sign-ins, account changes and who requested transfer/settings operations,
-without credentials. Restrict serial-device/network access at the OS/firewall
-level as well.
-The standalone WPF and CLI applications run locally and do not use these Web
-accounts; Windows/device permissions must control access to those applications.
+the saved connection/delay/framing settings. Save settings
+before sending; a request cannot override the configured CNC destination. The
+standalone WPF and CLI applications run locally. Restrict serial-device/network
+access at the OS/firewall level.
 
 ## Features
 
@@ -99,20 +72,18 @@ The commands below publish self-contained Windows x64 applications, so the CNC c
 ### Basic install: MSI package
 
 1. Download `Serial2CNC-<version>-win-x64.msi` from [GitHub Releases](https://github.com/EHoglid/Serial2CNC/releases/latest), once a version has been released.
-2. Run the MSI and approve the administrator prompt. It registers the three services for automatic startup; security setup starts them after provisioning.
-3. Run the bundled security setup in **elevated PowerShell** (Windows PowerShell 5.1 or PowerShell 7):
+2. Run the MSI and approve the administrator prompt. It registers the three services for automatic startup.
+3. Run the bundled service setup in **elevated PowerShell** (Windows PowerShell 5.1 or PowerShell 7):
 
    ```powershell
-   & "$env:ProgramFiles\Serial2CNC\setup-security.ps1" -AdminUser admin -WorkingDirectory 'C:\CNCPrograms'
+   & "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'
    ```
 
-   The program folder must already exist. Setup prompts securely for the first
-   administrator's password (at least twelve characters, including upper/lowercase,
-   a digit and a symbol). There is no default password. Services deliberately do
-   not start during MSI installation; they fail closed until provisioned.
-4. Trust the exported public certificate on the computers that will use the UI,
-   then open `https://<CNC-computer-name>:62899`, sign in, and save the program
-   folder and TCP/Serial connection in **Settings**.
+   The program folder must already exist. Setup configures service access,
+   provisions the Web HTTPS certificate and starts the services. Trust the
+   exported public certificate on client computers, then open
+   `https://<CNC-computer-name>:62899` and configure the program folder and
+   TCP/Serial connection in **Settings**.
 
 No build tools or .NET runtime are required on the CNC computer. This is a service installation, not a tray/taskbar application; the UI runs in your browser.
 
@@ -126,10 +97,10 @@ the Agent access to the specified program folder and opens only Web HTTPS to
 `LocalSubnet` in Windows Firewall. Review other existing firewall rules yourself.
 Do not run manual installation and MSI installation side by side.
 
-Setup creates protected per-service configuration under
+Setup creates per-service configuration under
 `%ProgramData%\Serial2CNC\Agent`, `Api`, and `Web`. Each directory is accessible only
-to its service identity, SYSTEM and administrators. Do not copy keys or the Web
-private certificate into source control or distribute them to clients.
+to its service identity, SYSTEM and administrators. Do not copy the Web private
+certificate into source control or distribute it to clients.
 
 By default setup creates a two-year self-signed certificate for the computer name
 and `localhost`. The **public-only** export is
@@ -144,18 +115,10 @@ DNS names. The private PFX and its random password stay in the protected Web
 directory. Renew certificates before expiry and rerun setup with the replacement
 thumbprint. Never disable certificate validation in clients.
 
-Setup is rerunnable: existing keys, accounts and configuration are preserved.
-For upgrades, install a higher MSI version and rerun setup to reapply ACLs/firewall
-and start services. Back up the protected configuration, `auth.db` and
-`DataProtection` directory securely as a set; SQLite backups should be made with
-Web stopped. Windows DataProtection keys are additionally protected with machine
-DPAPI; moving their files to another computer does not transfer that protection.
-Losing DataProtection keys invalidates cookies and reset tokens.
-If all administrators lose access, restore a known-good account database backup;
-there is intentionally no anonymous password-reset endpoint or default-account
-backdoor.
+Setup is rerunnable. For upgrades, install a higher MSI version and rerun setup
+to reapply ACLs/firewall and start services.
 
-To uninstall an MSI installation, use **Settings > Apps > Installed apps > Serial2CNC > Uninstall**. Do not delete its services manually. Increase the version for each release. Protected ProgramData settings/accounts, exported certificates and the setup firewall rule are retained; remove them deliberately after deciding whether they are needed for recovery. Existing LocalSystem Agent settings are copied to the new Agent data directory on first setup when available; other custom-account installations must migrate their old `%APPDATA%\Serial2CNC\service-settings.json` explicitly.
+To uninstall an MSI installation, use **Settings > Apps > Installed apps > Serial2CNC > Uninstall**. Do not delete its services manually. Increase the version for each release. Protected ProgramData settings, exported certificates and the setup firewall rule are retained; remove them deliberately after deciding whether they are needed for recovery. Existing LocalSystem Agent settings are copied to the new Agent data directory on first setup when available; other custom-account installations must migrate their old `%APPDATA%\Serial2CNC\service-settings.json` explicitly.
 
 ### Build the MSI yourself
 
@@ -207,8 +170,8 @@ sc.exe config Serial2CNC.Api depend= Serial2CNC.Agent
 if ($LASTEXITCODE -ne 0) { throw 'Could not configure API dependency.' }
 sc.exe config Serial2CNC.Web depend= Serial2CNC.Api
 if ($LASTEXITCODE -ne 0) { throw 'Could not configure Web dependency.' }
-Copy-Item .\setup-security.ps1 $installRoot
-& "$installRoot\setup-security.ps1" -AdminUser admin -WorkingDirectory 'C:\CNCPrograms'
+Copy-Item .\setup-services.ps1 $installRoot
+& "$installRoot\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'
 ```
 
 Open `https://<CNC-computer-name>:62899` after trusting the public certificate.
@@ -239,25 +202,16 @@ dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-conta
 
 ## Run with Docker Compose
 
-The bundled security provisioning currently targets Windows services. Docker
-images still build, but the old unauthenticated HTTP-only Compose configuration
-is **not a ready-to-run secured installation**. Containers fail startup without
-valid keys; HTTP service destinations other than loopback are rejected.
-
-For a container deployment, supply protected per-service configuration using
-`SecurityConfigPath`, persistent `DataDirectory` volumes, different service keys
-(`ServiceAuthentication:ApiKey`, `Agent:ApiKey`, `Api:ApiKey`), and trusted HTTPS
-certificates for traffic between containers. Bootstrap the first account using
-the Web executable's `--create-admin <username>` command with the password on
-standard input. Publish only the Web HTTPS endpoint; do not publish Agent/API
-ports. Never disable server-certificate validation or embed secrets into images.
+Docker Compose starts the stack without account provisioning or API keys. It
+uses HTTP on the private Compose network and publishes only the Web UI port.
+Keep the Compose network private and do not publish Agent/API ports externally.
 
 ## GitHub Actions
 
 - **Build and Test** workflow for push/PR on `main` and manual runs:
   - Windows and Linux jobs restore, build, and run tests for Core, Agent, API, Web, and CLI using [Serial2CNC.CrossPlatform.slnf](./Serial2CNC.CrossPlatform.slnf), excluding the Windows-only WPF app
   - A separate Windows job restores, builds, and runs tests for the WPF desktop project
-  - Authentication integration tests cover service HTTP/hub credentials, Web login/cookies/antiforgery, lockout, account management and role/session enforcement. Hardware-dependent serial/TCP transfers are not exercised by these jobs.
+  - Hardware-dependent serial/TCP transfers are not exercised by these jobs.
 - **Windows MSI** workflow builds on Windows for pushes/PRs on `main`, version tags, and manual runs; it verifies service installation, local endpoints/static assets, and uninstallation before uploading the MSI artifact
 - **Docker Compose Validate** workflow for compose syntax checks
 - **GitHub Pages** workflow to publish static project info page from `docs/`

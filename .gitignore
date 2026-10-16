@@ -246,6 +246,7 @@ ClientBin/
 *.dbproj.schemaview
 *.jfm
 *.pfx
+settings.json
 security.json
 auth.db
 auth.db-shm

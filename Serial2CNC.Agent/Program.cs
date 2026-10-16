@@ -2,11 +2,15 @@ using Serial2CNC.Agent;
 using Serial2CNC.Agent.Middleware;
 using Serial2CNC.Models;
 using Microsoft.Extensions.Hosting;
-using Serial2CNC.Security;
 
 var builder = WebApplication.CreateBuilder(args);
-var dataDirectory = builder.LoadSecurityConfiguration("Agent", args);
-builder.AddServiceAuthentication("http://127.0.0.1:62904");
+var dataDirectory = builder.Configuration["DataDirectory"] ??
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Serial2CNC", "Agent");
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"])
+    && !builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Any())
+{
+    builder.WebHost.UseSetting("urls", "http://127.0.0.1:62904");
+}
 builder.Host.UseWindowsService();
 
 builder.Services.AddSignalR();
@@ -18,13 +22,11 @@ builder.Services.AddProblemDetails();
 var app = builder.Build();
 
 app.UseExceptionHandler();
-app.UseAuthentication();
-app.UseAuthorization();
 
 app.MapGet("/", () =>
     Results.Redirect("/health"));
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapGet("/settings", (ServiceSettingsStore settingsStore) =>
     Results.Ok(settingsStore.Get()));

@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Serial2CNC.Models;
-using Serial2CNC.Security;
 
 namespace Serial2CNC.Api.Logs;
 
@@ -13,8 +12,7 @@ public sealed class AgentLogBridgeService(
     {
         var baseUrl = configuration["Agent:BaseUrl"] ?? "http://localhost:62904";
         await using var connection = new HubConnectionBuilder()
-            .WithUrl($"{baseUrl.TrimEnd('/')}/hubs/transfers",
-                options => options.Headers.Add(ServiceSecurity.HeaderName, configuration.RequireKey("Agent:ApiKey")))
+            .WithUrl($"{baseUrl.TrimEnd('/')}/hubs/transfers")
             .WithAutomaticReconnect()
             .Build();
 

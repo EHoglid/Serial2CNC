@@ -3,16 +3,17 @@ using Microsoft.Extensions.Hosting;
 using Serial2CNC.Api.Logs;
 using Serial2CNC.Api.Middleware;
 using Serial2CNC.Models;
-using Serial2CNC.Security;
 using Serial2CNC.Api;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.LoadSecurityConfiguration("Api", args);
-builder.AddServiceAuthentication("http://127.0.0.1:62901");
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"])
+    && !builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Any())
+{
+    builder.WebHost.UseSetting("urls", "http://127.0.0.1:62901");
+}
 builder.Host.UseWindowsService();
 
-var agentBaseUrl = builder.Configuration.RequirePrivateServiceUrl("Agent:BaseUrl", "http://127.0.0.1:62904");
-var agentKey = builder.Configuration.RequireKey("Agent:ApiKey");
+var agentBaseUrl = new Uri(builder.Configuration["Agent:BaseUrl"] ?? "http://127.0.0.1:62904");
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -21,21 +22,16 @@ builder.Services.AddSingleton<LogBroadcastService>();
 builder.Services.AddHostedService<AgentLogBridgeService>();
 builder.Services.AddExceptionHandler<AgentUnavailableExceptionHandler>();
 builder.Services.AddProblemDetails();
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddTransient<AgentCredentialHandler>();
 
 builder.Services.AddHttpClient("agent", client =>
 {
     client.BaseAddress = agentBaseUrl;
-    client.DefaultRequestHeaders.Add(ServiceSecurity.HeaderName, agentKey);
     client.Timeout = TimeSpan.FromSeconds(8);
-}).AddHttpMessageHandler<AgentCredentialHandler>();
+});
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
-app.UseAuthentication();
-app.UseAuthorization();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -44,7 +40,7 @@ if (app.Environment.IsDevelopment())
 
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapGet("/api/transfers/state", async (IHttpClientFactory factory, CancellationToken cancellationToken) =>
 {

@@ -9,7 +9,6 @@
   <ItemGroup>
 	<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
 	<ProjectReference Include="..\Serial2CNC.Core\Serial2CNC.Core.csproj" />
-	<ProjectReference Include="..\Serial2CNC.Security\Serial2CNC.Security.csproj" />
   </ItemGroup>
 
 </Project>

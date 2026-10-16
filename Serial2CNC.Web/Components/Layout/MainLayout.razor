@@ -3,19 +3,6 @@
 
 <div style="max-width: 980px; margin: 16px auto; padding: 0 12px 16px 12px;">
     <main>
-        <AuthorizeView>
-            <Authorized Context="authentication">
-                <nav style="margin-bottom:12px;">
-                    @authentication.User.Identity?.Name |
-                    <a href="/Account/Password">Change password</a> |
-                    @if (authentication.User.IsInRole(AccountRoles.Administrator))
-                    {
-                        <a href="/Account/Users">Accounts</a><span> | </span>
-                    }
-                    <a href="/Account/Logout">Sign out</a>
-                </nav>
-            </Authorized>
-        </AuthorizeView>
         @Body
     </main>
 </div>

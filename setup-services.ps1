@@ -1,29 +1,26 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-Provisions security after installing the Serial2CNC MSI on a single Windows host.
+Configures service directories and HTTPS after installing the Serial2CNC MSI.
 .DESCRIPTION
-Run elevated from the installed Serial2CNC directory. Existing configuration,
-Identity accounts and certificates are preserved unless CertificateThumbprint
-explicitly requests certificate renewal. Trust the exported public CER
+Run elevated from the installed Serial2CNC directory. Existing configuration
+and certificates are preserved unless CertificateThumbprint explicitly requests
+certificate renewal. Trust the exported public CER
 on clients only after verifying its fingerprint through a trusted channel.
-Never distribute the PFX or security.json files. The MSI deliberately does not
-start services; run this script again after upgrades.
+Never distribute the PFX or settings.json files. Run this script after
+installation and upgrades.
 .PARAMETER CertificateThumbprint
 Optional exportable server certificate in Cert:\LocalMachine\My. It must cover
 the computer hostname and localhost. Explicitly supplying it replaces the Web
-certificate even when security.json already exists, preserving keys and accounts.
+certificate even when settings.json already exists.
 Without it an existing certificate is preserved, or a self-signed one is made.
 .PARAMETER WorkingDirectory
 Optional existing transfer directory to which ONLY the Agent receives Modify.
 .EXAMPLE
-.\setup-security.ps1 -AdminUser admin -WorkingDirectory C:\CNC
+.\setup-services.ps1 -WorkingDirectory C:\CNC
 #>
 [CmdletBinding()]
 param(
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}$')]
-    [string]$AdminUser = 'admin',
-    [Security.SecureString]$AdminPassword,
     [string]$CertificateThumbprint,
     [string]$WorkingDirectory,
     [string]$InstallDirectory = $PSScriptRoot
@@ -84,27 +81,21 @@ function Assert-SafeParentAcl([string]$Path) {
 }
 
 function Read-Configuration([string]$Component) {
-    $path = Join-Path $dataRoot "$Component\security.json"
+    $path = Join-Path $dataRoot "$Component\settings.json"
+    if (-not (Test-Path -LiteralPath $path)) {
+        $path = Join-Path $dataRoot "$Component\security.json"
+    }
     if (Test-Path -LiteralPath $path) {
         return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     }
     return $null
 }
 
-function Get-Key($Configuration, [string]$Section) {
-    if ($null -eq $Configuration) { return $null }
-    $key = $Configuration.$Section.ApiKey
-    try {
-        if ([Convert]::FromBase64String($key).Length -lt 32) { throw 'Too short' }
-    } catch { throw "Existing $Section API key is invalid; configuration was not replaced." }
-    return $key
-}
-
 function Write-Configuration([string]$Component, $Configuration, [switch]$Replace) {
-    $path = Join-Path $dataRoot "$Component\security.json"
+    $path = Join-Path $dataRoot "$Component\settings.json"
     $exists = Test-Path -LiteralPath $path
     if ($Replace -or -not $exists) {
-        $staging = Join-Path $dataRoot "$Component\security.$([guid]::NewGuid()).json"
+        $staging = Join-Path $dataRoot "$Component\settings.$([guid]::NewGuid()).json"
         try {
             $Configuration | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $staging -Encoding UTF8
             if ($exists) {
@@ -159,7 +150,6 @@ $dataRoot = Join-Path $env:ProgramData 'Serial2CNC'
 Assert-SafeParentAcl $dataRoot
 $webExe = Join-Path $InstallDirectory 'Web\Serial2CNC.Web.exe'
 if (-not (Test-Path -LiteralPath $webExe -PathType Leaf)) { throw 'Install the Serial2CNC MSI first.' }
-if ([string]::IsNullOrWhiteSpace($AdminUser)) { throw 'AdminUser cannot be empty.' }
 $serviceSids = @{}
 foreach ($component in 'Agent', 'Api', 'Web') {
     $name = "Serial2CNC.$component"
@@ -219,21 +209,7 @@ if (-not (Test-Path -LiteralPath $agentSettings) -and (Test-Path -LiteralPath $l
     Write-Host 'Migrated legacy LocalSystem Agent settings to the private Agent ProgramData directory; the original was preserved.'
 }
 
-$agent = Read-Configuration 'Agent'
-$api = Read-Configuration 'Api'
 $web = Read-Configuration 'Web'
-$agentKey = Get-Key $agent 'ServiceAuthentication'
-$apiAgentKey = Get-Key $api 'Agent'
-$apiKey = Get-Key $api 'ServiceAuthentication'
-$webApiKey = Get-Key $web 'Api'
-if ($agentKey -and $apiAgentKey -and $agentKey -cne $apiAgentKey) { throw 'Existing Agent keys disagree.' }
-if ($apiKey -and $webApiKey -and $apiKey -cne $webApiKey) { throw 'Existing API keys disagree.' }
-if (-not $agentKey) { $agentKey = $apiAgentKey }
-if (-not $apiKey) { $apiKey = $webApiKey }
-if (-not $agentKey) { $agentKey = New-Secret }
-if (-not $apiKey) { $apiKey = New-Secret }
-if ($agentKey -ceq $apiKey) { throw 'Agent and API keys must be distinct.' }
-
 $webDirectory = Join-Path $dataRoot 'Web'
 $publicCertificate = Join-Path $dataRoot 'Serial2CNC-Web.cer'
 if ($null -eq $web -or $CertificateThumbprint) {
@@ -265,7 +241,7 @@ if ($null -eq $web -or $CertificateThumbprint) {
         Export-Certificate -Cert $certificate -FilePath $publicCertificate -Force | Out-Null
         if ($null -eq $web) {
             $web = @{
-                Api = @{ BaseUrl = 'http://127.0.0.1:62901'; ApiKey = $apiKey }
+                Api = @{ BaseUrl = 'http://127.0.0.1:62901' }
                 DataDirectory = $webDirectory
                 Kestrel = @{ Endpoints = @{ Https = @{
                     Url = 'https://0.0.0.0:62899'
@@ -276,7 +252,7 @@ if ($null -eq $web -or $CertificateThumbprint) {
             $web.Kestrel.Endpoints.Https.Certificate.Path = $pfxPath
             $web.Kestrel.Endpoints.Https.Certificate.Password = $pfxPassword
         }
-        Write-Configuration 'Web' $web -Replace:([bool]$CertificateThumbprint)
+        Write-Configuration 'Web' $web -Replace
     } finally {
         # The service uses its private PFX; do not leave another private-key copy in the machine store.
         if ($generatedCertificate -and $null -ne $certificate) {
@@ -286,14 +262,20 @@ if ($null -eq $web -or $CertificateThumbprint) {
     }
 }
 Write-Configuration 'Agent' @{
-    ServiceAuthentication = @{ ApiKey = $agentKey }
     DataDirectory = (Join-Path $dataRoot 'Agent')
-}
+} -Replace
 Write-Configuration 'Api' @{
-    ServiceAuthentication = @{ ApiKey = $apiKey }
-    Agent = @{ BaseUrl = 'http://127.0.0.1:62904'; ApiKey = $agentKey }
-}
+    Agent = @{ BaseUrl = 'http://127.0.0.1:62904' }
+} -Replace
 $web = Read-Configuration 'Web'
+$web.Api.BaseUrl = 'http://127.0.0.1:62901'
+if ($web.Api -is [System.Collections.IDictionary]) {
+    $web.Api.Remove('ApiKey')
+} else {
+    $web.Api.PSObject.Properties.Remove('ApiKey')
+}
+$web.DataDirectory = $webDirectory
+Write-Configuration 'Web' $web -Replace
 if ($web.DataDirectory -ine $webDirectory) { throw 'Existing Web DataDirectory must use its private ProgramData directory.' }
 if ($web.Api.BaseUrl -ne 'http://127.0.0.1:62901' -or
     (Read-Configuration 'Api').Agent.BaseUrl -ne 'http://127.0.0.1:62904') {
@@ -317,74 +299,6 @@ try {
 } finally { $pfx.Dispose() }
 Set-PrivateAcl $publicCertificate $null
 
-$needsAdministrator = $true
-if (Test-Path -LiteralPath (Join-Path $webDirectory 'auth.db')) {
-    $checkStart = New-Object Diagnostics.ProcessStartInfo
-    $checkStart.FileName = $webExe
-    $checkStart.WorkingDirectory = Split-Path -Parent $webExe
-    $checkStart.Arguments = '--has-admin'
-    $checkStart.UseShellExecute = $false
-    $checkStart.RedirectStandardOutput = $true
-    $checkStart.RedirectStandardError = $true
-    $check = New-Object Diagnostics.Process
-    $check.StartInfo = $checkStart
-    try {
-        [void]$check.Start()
-        $checkOutput = $check.StandardOutput.ReadToEndAsync()
-        $checkError = $check.StandardError.ReadToEndAsync()
-        if (-not $check.WaitForExit(60000)) {
-            $check.Kill()
-            throw 'Administrator existence check timed out; services remain stopped.'
-        }
-        switch ($check.ExitCode) {
-            0 { $needsAdministrator = $false }
-            3 { $needsAdministrator = $true }
-            default { throw "Administrator existence check failed (exit code $($check.ExitCode)); services remain stopped." }
-        }
-    } finally { $check.Dispose() }
-}
-if ($needsAdministrator) {
-    if ($null -eq $AdminPassword) {
-        $AdminPassword = Read-Host "Password for initial Administrator '$AdminUser'" -AsSecureString
-    }
-    $start = New-Object Diagnostics.ProcessStartInfo
-    $start.FileName = $webExe
-    $start.WorkingDirectory = Split-Path -Parent $webExe
-    $start.Arguments = '--create-admin "' + $AdminUser + '"'
-    $start.UseShellExecute = $false
-    $start.RedirectStandardInput = $true
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = $start
-    $pointer = [IntPtr]::Zero
-    try {
-        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($AdminPassword)
-        $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-        if ($password -match "[`r`n]" -or $password.Length -eq 0) { throw 'Password must be a single nonempty line.' }
-        [void]$process.Start()
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.WriteLine($password)
-        $process.StandardInput.Close()
-        $password = $null
-        if (-not $process.WaitForExit(60000)) {
-            $process.Kill()
-            throw 'Administrator bootstrap timed out.'
-        }
-        if ($process.ExitCode -ne 0) { throw 'Administrator bootstrap failed; services remain stopped.' }
-        if (-not (Test-Path -LiteralPath (Join-Path $webDirectory 'auth.db'))) {
-            throw 'Administrator bootstrap did not create the Identity database.'
-        }
-    } finally {
-        $password = $null
-        if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
-        $process.Dispose()
-    }
-} else {
-    Write-Host 'Existing Administrator confirmed; Identity database preserved and bootstrap skipped.'
-}
-
 $ruleName = 'Serial2CNC-Web-HTTPS'
 Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -Name $ruleName -DisplayName 'Serial2CNC Web HTTPS (local subnet)' `
@@ -402,6 +316,12 @@ try {
     foreach ($component in 'Web', 'Api', 'Agent') { Stop-Service -Name "Serial2CNC.$component" -Force -ErrorAction SilentlyContinue }
     throw
 }
+foreach ($component in 'Agent', 'Api', 'Web') {
+    $legacyConfigPath = Join-Path $dataRoot "$component\security.json"
+    if (Test-Path -LiteralPath $legacyConfigPath) {
+        Remove-Item -LiteralPath $legacyConfigPath -Force
+    }
+}
 Write-Host "Provisioning complete. Public certificate: $publicCertificate"
 Write-Host "Certificate SHA-1 thumbprint: $thumbprint"
-Write-Warning 'Verify the certificate fingerprint out of band and trust ONLY this public certificate on clients. No certificate was added to trusted roots. Never share security.json or the private PFX.'
+Write-Warning 'Verify the certificate fingerprint out of band and trust ONLY this public certificate on clients. No certificate was added to trusted roots. Never share the private PFX.'

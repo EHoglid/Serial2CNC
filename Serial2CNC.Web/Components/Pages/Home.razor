@@ -1,5 +1,4 @@
 @page "/"
-@attribute [Authorize]
 @using System.IO
 @using System.IO.Ports
 @using System.Text.Json
@@ -7,7 +6,6 @@
 @inject LiveLogStreamClient LogStream
 @inject IConfiguration Configuration
 @inject ILogger<Home> Logger
-@inject AuthenticationStateProvider AuthenticationState
 @implements IAsyncDisposable
 
 <div class="transfer-page">
@@ -31,7 +29,7 @@
                 <span>Serial (COM)</span>
             </div>
 
-            <FluentButton Class="settings-toggle" Appearance="ButtonAppearance.Outline" Disabled="@(!CanAdminister)" aria-label="Settings" Title="Settings (Administrator)" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" OnClick="ToggleSettingsPanels">
+            <FluentButton Class="settings-toggle" Appearance="ButtonAppearance.Outline" aria-label="Settings" Title="Settings" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" OnClick="ToggleSettingsPanels">
                 <svg class="settings-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <path d="M10 2h4l.5 3 1.5 1 3-1 2 3.5-2.5 2v3l2.5 2-2 3.5-3-1-1.5 1-.5 3h-4l-.5-3-1.5-1-3 1-2-3.5 2.5-2v-3l-2.5-2L5 5l3 1 1.5-1Z" />
                     <circle cx="12" cy="12" r="3" />
@@ -41,7 +39,7 @@
         <p class="connection-summary"><span class="muted">Configured destination:</span> @ConnectionSummary</p>
     </FluentCard>
 
-    @if ((ShowGeneralSettings || ShowAdvancedSettings) && CanAdminister)
+    @if (ShowGeneralSettings || ShowAdvancedSettings)
     {
     <div class="settings-group">
     @if (ShowGeneralSettings)
@@ -279,8 +277,8 @@
             <span class="status-badge" role="status">@TransferStatusLabel</span>
         </div>
         <div class="transfer-actions">
-            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(!CanOperate || IsTransferActionPending || TransferState?.IsRunning != false || string.IsNullOrWhiteSpace(FilePath))" OnClick="StartAsync">Start Send</FluentButton>
-            <FluentButton Appearance="ButtonAppearance.Default" Disabled="@(!CanOperate || IsTransferActionPending || TransferState?.IsRunning != true)" OnClick="CancelAsync">Cancel</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != false || string.IsNullOrWhiteSpace(FilePath))" OnClick="StartAsync">Start Send</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" Disabled="@(IsTransferActionPending || TransferState?.IsRunning != true)" OnClick="CancelAsync">Cancel</FluentButton>
             <FluentButton Appearance="ButtonAppearance.Outline" Disabled="@IsTransferActionPending" OnClick="RefreshStateAsync">Refresh State</FluentButton>
         </div>
         <pre class="transfer-response @(ResponseHasError ? "transfer-error" : null)" role="@(ResponseHasError ? "alert" : "status")" aria-live="polite">@ResponseText</pre>
@@ -306,8 +304,6 @@
 </div>
 
 @code {
-    private bool CanAdminister;
-    private bool CanOperate;
     private const int MaxLogEntries = 250;
     private readonly CancellationTokenSource _statePollCts = new();
     private Task? _statePollTask;
@@ -386,10 +382,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var user = (await AuthenticationState.GetAuthenticationStateAsync()).User;
-        CanAdminister = user.IsInRole(AccountRoles.Administrator);
-        CanOperate = CanAdminister || user.IsInRole(AccountRoles.Operator);
-
         RefreshComPorts();
         _initialSettings = CaptureSettings();
         await LoadSettingsAsync(preserveEdits: true);
