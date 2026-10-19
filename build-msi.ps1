@@ -1,11 +1,21 @@
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.0.0'
+    [string]$Version,
+    [string]$VersionSuffix
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+if (-not $Version) {
+    $calculated = & (Join-Path $PSScriptRoot '.github/scripts/Get-Version.ps1')
+    $Version = $calculated.VersionPrefix
+    if (-not $PSBoundParameters.ContainsKey('VersionSuffix')) {
+        $VersionSuffix = $calculated.VersionSuffix
+    }
+}
+if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+    throw 'Version must be major.minor.patch without leading zeroes or a prerelease suffix.'
+}
 $packageVersion = [version]$Version
 if ($packageVersion.Major -gt 255 -or $packageVersion.Minor -gt 255 -or $packageVersion.Build -gt 65535) {
     throw 'MSI versions must be major.minor.patch with major/minor <= 255 and patch <= 65535.'
@@ -31,6 +41,7 @@ try {
         }
         $publishPath = Join-Path $publishRoot $project
         & dotnet publish $projectPath -c Release -r win-x64 --self-contained true `
+            "-p:VersionPrefix=$Version" "-p:VersionSuffix=$VersionSuffix" `
             -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false -o $publishPath
         if ($LASTEXITCODE -ne 0) {
             throw "Publishing Serial2CNC.$project failed (exit code $LASTEXITCODE)."
@@ -40,6 +51,7 @@ try {
     & dotnet build (Join-Path $repoRoot 'Serial2CNC.Installer\Serial2CNC.Installer.wixproj') -c Release `
         "-p:AgentPublishDir=$publishRoot\Agent" "-p:ApiPublishDir=$publishRoot\Api" `
         "-p:WebPublishDir=$publishRoot\Web" "-p:DesktopPublishDir=$publishRoot\Desktop" `
+        "-p:VersionPrefix=$Version" "-p:VersionSuffix=$VersionSuffix" `
         "-p:ProductVersion=$Version" "-p:OutputPath=$buildOutput"
     if ($LASTEXITCODE -ne 0) {
         throw "Building the MSI failed (exit code $LASTEXITCODE)."

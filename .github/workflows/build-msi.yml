@@ -7,12 +7,16 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+  workflow_call:
     inputs:
-      version:
-        description: "MSI version (major.minor.patch)"
-        required: true
-        default: "1.0.0"
+      source_ref:
         type: string
+        required: false
+        default: ''
+      version:
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -28,33 +32,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
-      - name: Select version
+      - name: Restore GitVersion
+        run: dotnet tool restore
+
+      - name: Calculate version
         id: version
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
-        run: |
-          $version = '1.0.0'
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-              $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          } elseif ($env:REQUESTED_VERSION) {
-              $version = $env:REQUESTED_VERSION
-          }
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-              throw 'Use a version such as 1.0.0 (tag v1.0.0); prerelease suffixes are not supported.'
-          }
-          $version = ([version]$version).ToString(3)
-          "version=$version" >> $env:GITHUB_OUTPUT
+        run: ./.github/scripts/Get-Version.ps1 -Version $env:REQUESTED_VERSION -GitHubOutput
 
       - name: Build MSI
         env:
           MSI_VERSION: ${{ steps.version.outputs.version }}
-        run: .\build-msi.ps1 -Version $env:MSI_VERSION
+          MSI_VERSION_SUFFIX: ${{ steps.version.outputs.version_suffix }}
+        run: .\build-msi.ps1 -Version $env:MSI_VERSION -VersionSuffix $env:MSI_VERSION_SUFFIX
 
       - name: Test desktop-only and custom-port server-only installations
         env:
@@ -259,7 +260,7 @@ jobs:
       - name: Upload MSI
         uses: actions/upload-artifact@v6
         with:
-          name: Serial2CNC-${{ steps.version.outputs.version }}-win-x64
+          name: Serial2CNC-${{ steps.version.outputs.full_version }}-win-x64
           path: |
             artifacts\installer\*.msi
             artifacts\installer\*.sha256
@@ -273,39 +274,3 @@ jobs:
           name: installer-logs
           path: artifacts\installer\*.log
           if-no-files-found: ignore
-
-  release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download MSI
-        uses: actions/download-artifact@v7
-        with:
-          name: Serial2CNC-${{ needs.build.outputs.version }}-win-x64
-          path: installer
-
-      - name: Publish GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          MSI_VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          $assets = @(
-              "installer\Serial2CNC-$env:MSI_VERSION-win-x64.msi"
-              "installer\Serial2CNC-$env:MSI_VERSION-win-x64.msi.sha256"
-              "installer\setup-services.ps1"
-          )
-          gh release view $env:RELEASE_TAG
-          if ($LASTEXITCODE -eq 0) {
-              gh release upload $env:RELEASE_TAG @assets --clobber
-          } else {
-              gh release create $env:RELEASE_TAG @assets --verify-tag --generate-notes --title "Serial2CNC $env:MSI_VERSION"
-          }
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Publishing the GitHub Release failed.'
-          }

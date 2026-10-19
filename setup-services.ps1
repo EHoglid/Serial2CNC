@@ -175,7 +175,7 @@ namespace Serial2CNC {
     public static class SetupCertificatePin {
         public static System.Net.Security.RemoteCertificateValidationCallback Create(string expected) {
             return (sender, certificate, chain, errors) =>
-                certificate != null && System.String.Equals(certificate.GetCertHashString(), expected,
+                null != certificate && System.String.Equals(certificate.GetCertHashString(), expected,
                     System.StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -228,7 +228,7 @@ foreach ($component in 'Agent', 'Api', 'Web') {
 
 if ($WorkingDirectory) {
     $working = Get-Item -LiteralPath $WorkingDirectory -Force
-    if (-not $working.PSIsContainer -or $working.Parent -eq $null) {
+    if (-not $working.PSIsContainer -or $null -eq $working.Parent) {
         throw 'WorkingDirectory must be an existing non-root transfer directory.'
     }
     Assert-NoReparsePoint $working.FullName

@@ -3,7 +3,6 @@
   <PropertyGroup>
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>Serial2CNC</OutputName>
-    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
     <!-- SQLite needs DefaultLanguage="0" for ICE60; WIX1101 warns because its language resource is absent. -->
     <SuppressSpecificWarnings>$(SuppressSpecificWarnings);1101</SuppressSpecificWarnings>
 

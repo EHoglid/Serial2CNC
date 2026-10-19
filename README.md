@@ -55,7 +55,7 @@ access at the OS/firewall level.
 
 Reference:
 
-- USR-W610: https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html
+- [USR-W610 product reference](https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html)
 
 ## Run on Windows without Visual Studio
 
@@ -154,10 +154,17 @@ On Windows with the .NET 10 SDK, clone the repository and run:
 ```powershell
 git clone https://github.com/EHoglid/Serial2CNC.git
 Set-Location .\Serial2CNC
-.\build-msi.ps1 -Version 1.0.0
+dotnet tool restore
+.\build-msi.ps1
 ```
 
-The script publishes self-contained applications, including configuration and Web static assets, then builds the [WiX installer](./Serial2CNC.Installer/Product.wxs). WiX is restored automatically from NuGet; no Visual Studio or global WiX installation is needed. The result is `artifacts\installer\Serial2CNC-1.0.0-win-x64.msi` with a `.sha256` checksum.
+The script uses GitVersion to calculate the version from your checkout, publishes
+self-contained applications including configuration and Web static assets, then
+builds the [WiX installer](./Serial2CNC.Installer/Product.wxs). WiX is restored
+automatically from NuGet; no Visual Studio or global WiX installation is needed.
+The result is `artifacts\installer\Serial2CNC-<numeric-version>-win-x64.msi` with a
+`.sha256` checksum. Local packaging can explicitly override the version with
+`-Version 1.0.0`; this does not create a tag or publish a release.
 
 ### Publish the applications
 
@@ -238,11 +245,26 @@ Keep the Compose network private and do not publish Agent/API ports externally.
 
 ## GitHub Actions
 
+- **Versioning:** [GitVersion.yml](./GitVersion.yml) configures GitHub Flow with
+  patch increments by default. The pinned .NET tool is restored with
+  `dotnet tool restore`. GitVersion calculates the version; there is no second
+  custom bump calculator. [Directory.Build.props](./Directory.Build.props)
+  shares the resulting version across the six .NET projects and the WiX project.
+  Untagged `main` builds use a version such as `1.0.1-ci.12`; feature builds have
+  their own prerelease label. Assembly informational versions also include the
+  source commit. MSI product versions always use the numeric portion because
+  Windows Installer cannot represent prerelease labels. CI artifacts are not
+  production releases, even when their MSI numeric version matches a release.
 - **Build and Test** workflow for push/PR on `main` and manual runs:
+  - Fetches full Git history and tests versioning in disposable repositories before calculating the build version
   - Windows and Linux jobs restore, build, and run tests for Core, Agent, API, Web, and CLI using [Serial2CNC.CrossPlatform.slnf](./Serial2CNC.CrossPlatform.slnf), excluding the Windows-only WPF app
   - A separate Windows job restores, builds, and runs tests for the WPF desktop project
   - Hardware-dependent serial/TCP transfers are not exercised by these jobs.
 - **Windows MSI** workflow builds on Windows for pushes/PRs on `main`, version tags, and manual runs; it verifies service installation, local endpoints/static assets, and uninstallation before uploading the MSI artifact
+- **Release** is manually triggered and reuses both workflows for a single pinned
+  source commit. It is the only workflow that creates release tags and publishes
+  GitHub Releases. Ordinary pushes, tag builds, and manual MSI builds do not
+  publish releases.
 - **Docker Compose Validate** workflow for compose syntax checks
 - **GitHub Pages** workflow to publish static project info page from `docs/`
 - **Automatic Dependency Submission (NuGet)** can restore the WPF project on Linux because it enables `EnableWindowsTargeting`. This allows dependency analysis on non-Windows runners; the desktop app still requires Windows to run.
@@ -250,18 +272,42 @@ Keep the Compose network private and do not publish Agent/API ports externally.
 
 ### Publish a downloadable installer
 
-After these changes are merged into `main`, use **Actions > Windows MSI > Run workflow** to build an artifact without creating a release. The manual version defaults to `1.0.0`.
+Merge these workflow/tooling changes into `main` first so the release workflow
+appears in Actions. To publish:
 
-To create a GitHub Release with the MSI and checksum attached, push a version tag on the commit you want to release:
+1. Merge the application changes you want to release into `main`.
+2. Open **Actions > Release > Run workflow** and select the **main** branch.
+3. Choose **patch**, **minor**, or **major**. GitVersion calculates the next
+  release version. The first release starts at **1.0.0**; after `v1.2.3`, a patch
+  release becomes `1.2.4`, minor becomes `1.3.0`, and major becomes `2.0.0`.
+  Commit-message bump directives are disabled so this selection controls the increment.
+4. Start the workflow. Its summary records the proposed tag and exact source
+  commit. It runs the Windows/Linux builds, version checks, and MSI installation,
+  service, desktop, and uninstallation smoke tests against that same commit.
+5. Only after all checks pass does it verify the installer checksum, push the
+  annotated version tag, and publish a GitHub Release with generated notes, the
+  combined desktop/server MSI, SHA-256 checksum, and service setup script.
 
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
+You do not need to edit version numbers or create tags manually. Releases are
+serialized to prevent competing release runs. A commit that already has a
+release tag is rejected; merge a new commit before releasing another version.
+Release tags use `v<major>.<minor>.<patch>`, with major/minor at most 255 and patch
+at most 65535. Select a larger minor or major version when a field would overflow.
+Keep the installer's UpgradeCode unchanged between releases.
 
-Use strictly `v<major>.<minor>.<patch>` tags, with major/minor at most 255 and patch at most 65535 (Windows Installer limits). Prerelease suffixes are not supported. Increase the version for subsequent releases and keep the installer UpgradeCode unchanged. Releases are only published after the Windows build and installer smoke test succeed. Re-running a successful tag workflow updates its existing release assets.
+Failed build/test jobs never create a release tag. If publication fails after
+the tag was pushed, inspect GitHub and use **Re-run failed jobs** to retry the
+publication job. It accepts an existing tag only when it points to the exact
+tested commit. Published releases and assets are never overwritten; an existing
+draft or release must be inspected manually rather than replaced automatically.
 
-The workflow uses GitHub's built-in token; no personal access token is needed. Repository/organization Actions policy must permit the release job's `contents: write` permission.
+Use **Actions > Windows MSI > Run workflow** when you only want a build artifact,
+not a release. Its artifact name includes the full calculated build version.
+
+The release workflow uses GitHub's built-in token; no personal access token is
+needed. Repository/organization Actions policy and tag rules must permit the
+publication job's `contents: write` permission. Tags created with that token do
+not trigger another workflow run; the release's own build/test jobs are the gates.
 
 ## GitHub Pages
 
