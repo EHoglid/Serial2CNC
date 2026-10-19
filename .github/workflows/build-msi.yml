@@ -82,12 +82,44 @@ jobs:
                   (Test-Path -LiteralPath 'HKLM:\SOFTWARE\EHoglid\Serial2CNC')) {
                   throw 'Desktop-only installation must include the app and shortcut, without server components.'
                 }
-                $process = Start-Process -FilePath $desktopExe -WorkingDirectory $env:TEMP -PassThru
+                $desktopStartupTime = Get-Date
+                $desktopStdoutLog = Join-Path $PWD 'artifacts\installer\desktop-stdout.log'
+                $desktopStderrLog = Join-Path $PWD 'artifacts\installer\desktop-stderr.log'
+                $process = Start-Process -FilePath $desktopExe -WorkingDirectory $env:TEMP -PassThru `
+                    -RedirectStandardOutput $desktopStdoutLog -RedirectStandardError $desktopStderrLog
                 try {
-                  if (-not $process.WaitForInputIdle(30000)) { throw 'The desktop app did not become responsive.' }
+                  $startupTimer = [Diagnostics.Stopwatch]::StartNew()
+                  while ($startupTimer.ElapsedMilliseconds -lt 30000) {
+                    $process.Refresh()
+                    if ($process.HasExited -or $process.MainWindowHandle -ne 0) { break }
+                    $null = $process.WaitForExit(100)
+                  }
                   $process.Refresh()
-                  if ($process.HasExited -or $process.MainWindowHandle -eq 0) { throw 'The desktop app did not open its window.' }
+                  if ($process.HasExited) {
+                    throw "The desktop app exited before opening its window (exit code $($process.ExitCode))."
+                  }
+                  if ($process.MainWindowHandle -eq 0) {
+                    throw "The desktop app did not open its window within 30 seconds (process $($process.Id), session $($process.SessionId))."
+                  }
+                  $remainingMs = [Math]::Max(1, [int](30000 - $startupTimer.ElapsedMilliseconds))
+                  if (-not $process.WaitForInputIdle($remainingMs)) { throw 'The desktop window did not become responsive within 30 seconds.' }
+                  $process.Refresh()
+                  if ($process.HasExited) { throw "The desktop app exited during startup (exit code $($process.ExitCode))." }
+                  Write-Host "Desktop startup verified: $($process.MainWindowTitle) (process $($process.Id))."
+                } catch {
+                  foreach ($log in $desktopStdoutLog, $desktopStderrLog) {
+                    if (Test-Path -LiteralPath $log) {
+                      Write-Host "Startup output: $log"
+                      Get-Content -LiteralPath $log | Out-Host
+                    }
+                  }
+                  Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $desktopStartupTime; Level = 2 } -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Message -match 'Serial2CNC' } |
+                      Select-Object TimeCreated, ProviderName, Message | Format-List | Out-String |
+                      Tee-Object -FilePath (Join-Path $PWD 'artifacts\installer\desktop-events.log') | Out-Host
+                  throw
                 } finally {
+                  $process.Refresh()
                   if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
                   $process.Dispose()
                 }

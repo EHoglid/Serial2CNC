@@ -314,3 +314,8 @@ not trigger another workflow run; the release's own build/test jobs are the gate
 Project page is published from `docs/` by the `github-pages.yml` workflow.
 
 After first successful deployment, enable Pages in repository settings if needed.
+
+## License
+
+Serial2CNC is licensed under the [Apache License 2.0](./LICENSE).
+Third-party dependencies remain subject to their respective licenses.
