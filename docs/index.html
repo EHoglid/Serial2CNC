@@ -1,58 +1,867 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Serial2CNC</title>
-  <style>
-    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #111; color: #e8e8e8; }
-    .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
-    h1 { margin-top: 0; }
-    .card { background: #1f1f1f; border: 1px solid #333; border-radius: 8px; padding: 16px; margin: 12px 0; }
-    a { color: #66c2ff; }
-    code { background: #2a2a2a; padding: 2px 6px; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>Serial2CNC</h1>
-    <p>Send CNC files over TCP or Serial using a Windows desktop app or a Blazor UI backed by API and Agent services.</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Set up Serial2CNC as a Windows transfer server or a standalone WPF desktop app. Configure TCP, Serial, Okuma OSP7000L framing, and line delays."
+    />
+    <meta name="color-scheme" content="light" />
+    <title>Serial2CNC | Setup &amp; Transfer Guide</title>
+    <style>
+      :root {
+        --ink: #202b29;
+        --muted: #576561;
+        --accent: #12634e;
+        --line: #d5dfda;
+        --paper: #fff;
+        --wash: #f2f6f3;
+        --warning: #8a3c21;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 24px;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Bahnschrift", "Aptos", "Segoe UI", sans-serif;
+        font-size: 16px;
+        line-height: 1.65;
+        letter-spacing: 0;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 4px;
+        overflow-wrap: anywhere;
+      }
+      a:hover {
+        color: #093f32;
+      }
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 5px;
+      }
+      .skip-link {
+        position: absolute;
+        top: -100px;
+        left: 16px;
+        background: var(--paper);
+        padding: 8px 16px;
+        z-index: 2;
+      }
+      .skip-link:focus {
+        top: 12px;
+      }
+      .container {
+        width: min(1120px, 100% - 48px);
+        margin-inline: auto;
+      }
+      .masthead {
+        border-bottom: 1px solid var(--line);
+      }
+      .masthead .container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 76px;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 20px;
+        color: var(--ink);
+        text-decoration: none;
+      }
+      .brand span {
+        color: var(--accent);
+      }
+      .top-links {
+        display: flex;
+        gap: 24px;
+        font-size: 14px;
+      }
+      .intro {
+        padding: 48px 0 32px;
+        background: linear-gradient(110deg, #f2f6f3, #fff 75%);
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--accent);
+        text-transform: uppercase;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.2;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      h1 {
+        font-size: 48px;
+        margin: 0 0 16px;
+      }
+      h2 {
+        font-size: 28px;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 20px;
+        margin: 28px 0 10px;
+      }
+      p {
+        margin: 0 0 16px;
+      }
+      .lead {
+        max-width: 720px;
+        font-size: 20px;
+        color: var(--muted);
+      }
+      .paths {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        margin-top: 28px;
+      }
+      .path {
+        border-top: 2px solid var(--accent);
+        padding-top: 16px;
+      }
+      .path h2 {
+        font-size: 20px;
+        margin-bottom: 8px;
+      }
+      .path p {
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .path a {
+        font-weight: 600;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr);
+        gap: 56px;
+        padding-block: 40px 64px;
+      }
+      .contents {
+        align-self: start;
+        position: sticky;
+        top: 24px;
+      }
+      .contents p {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      .contents a {
+        display: block;
+        padding: 8px 0;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .contents a:hover {
+        text-decoration: underline;
+      }
+      main {
+        min-width: 0;
+      }
+      section {
+        padding-bottom: 36px;
+        margin-bottom: 36px;
+        border-bottom: 1px solid var(--line);
+      }
+      section:last-child {
+        margin-bottom: 0;
+      }
+      .section-number {
+        display: block;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .section-intro {
+        color: var(--muted);
+      }
+      ol,
+      ul {
+        padding-left: 24px;
+        margin: 16px 0;
+      }
+      li {
+        padding-left: 4px;
+        margin-bottom: 12px;
+      }
+      li > p {
+        margin: 8px 0 12px;
+      }
+      li strong {
+        font-weight: 600;
+      }
+      code,
+      pre {
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 13px;
+      }
+      :not(pre) > code {
+        background: var(--wash);
+        padding: 2px 5px;
+        border-radius: 3px;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        background: #172c26;
+        color: #eef6f1;
+        padding: 20px;
+        margin: 16px 0;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        line-height: 1.8;
+      }
+      .note {
+        border-left: 3px solid var(--accent);
+        background: var(--wash);
+        padding: 16px 20px;
+        margin: 24px 0;
+      }
+      .note p:last-child {
+        margin-bottom: 0;
+      }
+      .warning {
+        border-color: var(--warning);
+        background: #fcf3ef;
+      }
+      .warning strong {
+        color: var(--warning);
+      }
+      .architecture {
+        margin: 24px 0;
+      }
+      .architecture svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 10px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        margin: 20px 0;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 12px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        font-weight: 600;
+        background: var(--wash);
+      }
+      .payload {
+        margin: 24px 0;
+        border-left: 3px solid var(--accent);
+        padding-left: 20px;
+      }
+      .payload pre {
+        margin-bottom: 10px;
+      }
+      .timing {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin: 24px 0;
+        font-size: 14px;
+      }
+      .timing .line {
+        font-family: "Cascadia Code", Consolas, monospace;
+        padding-block: 8px;
+        border-block: 2px solid var(--accent);
+      }
+      .timing .pause {
+        color: var(--warning);
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 24px 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer .container {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      footer p {
+        margin: 0;
+      }
+      @media (max-width: 800px) {
+        .layout {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .contents {
+          position: static;
+          border-bottom: 1px solid var(--line);
+          padding-bottom: 20px;
+        }
+        .contents p {
+          margin-bottom: 8px;
+        }
+        .contents a {
+          display: inline-block;
+          margin-right: 20px;
+        }
+      }
+      @media (max-width: 540px) {
+        .container {
+          width: calc(100% - 32px);
+        }
+        .masthead .container {
+          min-height: 68px;
+          gap: 16px;
+          flex-wrap: wrap;
+          padding-block: 12px;
+        }
+        .top-links {
+          gap: 16px;
+        }
+        .intro {
+          padding-top: 32px;
+        }
+        h1 {
+          font-size: 36px;
+        }
+        h2 {
+          font-size: 25px;
+        }
+        .lead {
+          font-size: 18px;
+        }
+        .paths {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+        .layout {
+          padding-top: 24px;
+        }
+        pre {
+          padding: 16px;
+        }
+        .note {
+          padding: 14px 16px;
+        }
+        th,
+        td {
+          padding: 10px 8px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+      @media print {
+        .contents,
+        .top-links,
+        .skip-link {
+          display: none;
+        }
+        .layout {
+          display: block;
+        }
+        .container {
+          width: 100%;
+        }
+        pre {
+          background: #f2f6f3;
+          color: #202b29;
+        }
+        section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to setup guide</a>
+    <header class="masthead">
+      <div class="container">
+        <a class="brand" href="#">Serial<span>2</span>CNC</a>
+        <nav class="top-links" aria-label="Project links">
+          <a href="https://github.com/EHoglid/Serial2CNC/releases/latest"
+            >Downloads</a
+          >
+          <a href="https://github.com/EHoglid/Serial2CNC">GitHub</a>
+        </nav>
+      </div>
+    </header>
 
-    <div class="card">
-      <h2>Built-in CNC/Device Support</h2>
-      <ul>
-        <li><strong>USR-W610</strong> serial-to-Wi-Fi/Ethernet converter workflow (TCP mode)</li>
-        <li><strong>Okuma OSP7000L</strong> framing option for CNC transfer</li>
-      </ul>
-      <p>Reference: <a href="https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html">USR-W610 product page</a></p>
+    <div class="intro">
+      <div class="container">
+        <p class="eyebrow">Setup &amp; operator guide</p>
+        <h1>Serial2CNC</h1>
+        <p class="lead">
+          Send CNC program files over TCP or Serial. Run a shared transfer
+          server with a browser interface, or send directly from a Windows
+          desktop.
+        </p>
+        <div class="paths">
+          <div class="path">
+            <h2>Server &amp; browser</h2>
+            <p>
+              Keep transfers on a dedicated CNC computer. Access the interface
+              from a trusted network, even when nobody is logged on to the
+              server.
+            </p>
+            <a href="#server">Set up the server &rarr;</a>
+          </div>
+          <div class="path">
+            <h2>WPF desktop</h2>
+            <p>
+              Open the Windows application and send files directly from that
+              computer. No Web, API, or Agent services required.
+            </p>
+            <a href="#desktop">Set up the desktop app &rarr;</a>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="card">
-      <h2>Windows setup</h2>
-      <ol>
-        <li>Download the Windows x64 MSI from <a href="https://github.com/EHoglid/Serial2CNC/releases/latest">GitHub Releases</a>, once a version is released.</li>
-        <li>Run the MSI and approve the administrator prompt. It installs the Agent, API, and Web as automatic Windows services, running even when nobody is logged on.</li>
-        <li>Open <code>http://127.0.0.1:62899</code>, configure the working directory and TCP/Serial settings, then select a file and start the transfer.</li>
-      </ol>
-      <p>For unreleased builds, download and unzip an installer artifact from a successful <a href="https://github.com/EHoglid/Serial2CNC/actions/workflows/build-msi.yml">Windows MSI workflow</a> run (GitHub sign-in required). Installers are currently unsigned; only install trusted builds.</p>
-      <p>See the <a href="https://github.com/EHoglid/Serial2CNC#run-on-windows-without-visual-studio">README setup guide</a> for checksum verification, building an MSI yourself, release instructions, and manual service-account installation.</p>
-      <p><strong>Network safety:</strong> the MSI services use the highly privileged LocalSystem account and listen only on loopback. The application does not provide user authentication; keep it on a trusted computer and do not expose it directly to an untrusted network.</p>
+    <div class="container layout">
+      <nav class="contents" aria-label="On this page">
+        <p>On this page</p>
+        <a href="#server">01 / Server setup</a>
+        <a href="#desktop">02 / WPF desktop</a>
+        <a href="#connection">03 / CNC connection</a>
+        <a href="#okuma">04 / Okuma first &amp; last row</a>
+        <a href="#delay">05 / Transfer delay</a>
+      </nav>
+
+      <main id="main">
+        <section id="server" aria-labelledby="server-title">
+          <span class="section-number">01 / SERVER SETUP</span>
+          <h2 id="server-title">One CNC computer. Browser access.</h2>
+          <p class="section-intro">
+            The Windows server installation runs three automatic services: Web
+            hosts the browser interface, API routes requests, and Agent reads
+            program files and sends them to the CNC.
+          </p>
+
+          <figure class="architecture">
+            <svg
+              viewBox="0 0 720 100"
+              role="img"
+              aria-labelledby="architecture-title architecture-description"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <title id="architecture-title">Server transfer path</title>
+              <desc id="architecture-description">
+                A browser connects to Web over HTTPS. Web connects to API, then
+                Agent, on the server. Agent sends to the CNC over TCP or Serial.
+              </desc>
+              <path d="M105 40H615" stroke="#9baea4" stroke-width="2" />
+              <g fill="#f2f6f3" stroke="#d5dfda">
+                <rect x="0.5" y="12" width="112" height="56" rx="4" />
+                <rect x="152" y="12" width="112" height="56" rx="4" />
+                <rect x="304" y="12" width="112" height="56" rx="4" />
+                <rect x="456" y="12" width="112" height="56" rx="4" />
+                <rect
+                  x="608"
+                  y="12"
+                  width="111"
+                  height="56"
+                  rx="4"
+                  fill="#12634e"
+                  stroke="#12634e"
+                />
+              </g>
+              <g
+                font-family="Bahnschrift, Segoe UI, sans-serif"
+                font-size="16"
+                text-anchor="middle"
+                fill="#202b29"
+              >
+                <text x="56" y="46">Browser</text>
+                <text x="208" y="46">Web</text>
+                <text x="360" y="46">API</text>
+                <text x="512" y="46">Agent</text>
+                <text x="664" y="46" fill="#fff">CNC</text>
+              </g>
+              <g
+                font-family="Bahnschrift, Segoe UI, sans-serif"
+                font-size="12"
+                text-anchor="middle"
+                fill="#576561"
+              >
+                <text x="132" y="94">HTTPS</text>
+                <text x="360" y="94">On the server</text>
+                <text x="588" y="94">TCP / Serial</text>
+              </g>
+            </svg>
+            <figcaption>
+              The program folder and CNC connection belong to the Agent
+              computer, not the computer running the browser.
+            </figcaption>
+          </figure>
+
+          <h3>Install on Windows</h3>
+          <p>
+            Use Windows 10/11 or Windows Server (x64), with administrator
+            access. Create a local program folder, such as
+            <code>C:\CNCPrograms</code>, before running setup.
+          </p>
+          <ol>
+            <li>
+              <strong>Download and install the MSI.</strong> Get the Windows x64
+              installer from
+              <a href="https://github.com/EHoglid/Serial2CNC/releases/latest"
+                >GitHub Releases</a
+              >
+              when a release is available. Run it and approve the administrator
+              prompt. The self-contained package needs neither Visual Studio nor
+              a separate .NET runtime.
+            </li>
+            <li>
+              <strong>Configure and start the services.</strong> Open PowerShell
+              as administrator and run:
+              <pre><code>&amp; "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'</code></pre>
+              <p>
+                Setup grants the Agent access to that folder, provisions the Web
+                HTTPS certificate, and starts the services. The services run
+                under separate, least-privilege virtual accounts, not
+                LocalSystem.
+              </p>
+            </li>
+            <li>
+              <strong
+                >Trust the public certificate on browser computers.</strong
+              >
+              Verify the certificate thumbprint shown by setup through a trusted
+              channel before importing the public certificate into each client's
+              trusted root certificate store.
+              <pre><code>%ProgramData%\Serial2CNC\Serial2CNC-Web.cer</code></pre>
+              <p>
+                Distribute only this public <code>.cer</code> file, never the
+                private PFX. The default self-signed certificate lasts two
+                years; renew it before expiry.
+              </p>
+            </li>
+            <li>
+              <strong>Open the Web interface.</strong> Visit
+              <code>https://&lt;CNC-computer-name&gt;:62899</code>. Use the
+              computer name covered by the certificate, not its IP address. Do
+              not bypass certificate warnings.
+            </li>
+            <li>
+              <strong>Save settings, then transfer.</strong> Set the Agent's
+              program folder and extension filter (for example,
+              <code>*.nc</code>), configure the
+              <a href="#connection">CNC connection</a>, and review framing and
+              delay under <strong>Transfer options</strong>. Save the settings,
+              select a file from the server folder, put the CNC into its receive
+              mode, and start the transfer. Monitor status and logs; use Cancel
+              to stop an active send.
+            </li>
+          </ol>
+
+          <aside class="note warning" aria-label="Network safety">
+            <p>
+              <strong
+                >Trusted networks only. There is no application login.</strong
+              >
+              Setup opens Web HTTPS port <code>62899</code> to the local subnet;
+              API <code>62901</code> and Agent <code>62904</code> stay on
+              loopback. Do not expose these services to the public internet.
+              Review existing firewall rules as well.
+            </p>
+          </aside>
+          <p>
+            Before a release is available, download and unzip an artifact from a
+            successful
+            <a
+              href="https://github.com/EHoglid/Serial2CNC/actions/workflows/build-msi.yml"
+              >Windows MSI workflow</a
+            >
+            run (GitHub sign-in required). Installers are unsigned; use trusted
+            builds and compare the MSI's SHA-256 hash with the accompanying
+            checksum.
+          </p>
+          <p>
+            For custom certificates, service accounts, network shares, upgrades,
+            or building the MSI, see the
+            <a
+              href="https://github.com/EHoglid/Serial2CNC#run-on-windows-without-visual-studio"
+              >full Windows setup guide</a
+            >. Do not install manual services alongside the MSI services.
+          </p>
+        </section>
+
+        <section id="desktop" aria-labelledby="desktop-title">
+          <span class="section-number">02 / WPF DESKTOP</span>
+          <h2 id="desktop-title">Send directly from Windows</h2>
+          <p class="section-intro">
+            The WPF application is standalone and separate from the server MSI.
+            It reads local files and connects directly to the CNC or converter
+            using your Windows account.
+          </p>
+          <ol>
+            <li>
+              <strong>Build the desktop application.</strong> On a Windows build
+              computer with the
+              <a href="https://dotnet.microsoft.com/download/dotnet/10.0"
+                >.NET 10 SDK</a
+              >, get the source and publish:
+              <pre><code>git clone https://github.com/EHoglid/Serial2CNC.git
+Set-Location .\Serial2CNC
+dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o .\artifacts\desktop</code></pre>
+            </li>
+            <li>
+              <strong>Launch the app.</strong> Open
+              <code>artifacts\desktop\Serial2CNC.exe</code>. To use another
+              Windows x64 computer, copy the entire <code>desktop</code> output
+              folder, not just the EXE. No separate .NET runtime or Windows
+              services are required.
+            </li>
+            <li>
+              <strong>Choose the connection.</strong> Select
+              <strong>TCP (USR-W610)</strong> or <strong>Serial / COM</strong>.
+              Open <strong>Settings</strong> to enter the destination or serial
+              parameters, delay between lines, and Okuma framing option.
+            </li>
+            <li>
+              <strong>Select and send a program.</strong> Browse to the CNC
+              file, check the program name if using Okuma framing, put the CNC
+              into receive mode, and start the transfer. Keep the app open and
+              monitor progress until it finishes.
+            </li>
+          </ol>
+          <div class="note">
+            <p>
+              <strong>Choose one sender per connection.</strong> The WPF app
+              does not control the server Agent or share its saved settings.
+              Avoid sending from the desktop and server to the same CNC at the
+              same time.
+            </p>
+          </div>
+        </section>
+
+        <section id="connection" aria-labelledby="connection-title">
+          <span class="section-number">03 / CNC CONNECTION</span>
+          <h2 id="connection-title">Match the receiving machine</h2>
+          <p>
+            Both interfaces use the same transfer engine. Choose the transport
+            that matches your wiring and the CNC's receive settings.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Connection</th>
+                  <th scope="col">What to configure</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">TCP / USR-W610</th>
+                  <td>
+                    Enter the converter's reachable IP address and listening TCP
+                    port. Configure its serial side to match the CNC. Enable TCP
+                    XON/XOFF only when the receiving setup passes these
+                    flow-control characters through.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Serial / COM</th>
+                  <td>
+                    Choose the COM port on the sending computer and match baud
+                    rate, parity, data bits, stop bits, and handshake to the
+                    CNC. A virtual COM port can also be used when provided by
+                    your converter software.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Files are sent as ASCII, one line at a time, with CRLF
+            (<code>\r\n</code>) line endings. Check the CNC manual for supported
+            program format, cabling, and receive procedure. A completed send is
+            not confirmation that the CNC accepted or validated the program;
+            verify it on the controller before use.
+          </p>
+          <p>
+            Device reference:
+            <a
+              href="https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html"
+              >USR-W610 serial-to-Wi-Fi/Ethernet converter</a
+            >.
+          </p>
+        </section>
+
+        <section id="okuma" aria-labelledby="okuma-title">
+          <span class="section-number">04 / OKUMA FIRST &amp; LAST ROW</span>
+          <h2 id="okuma-title">What the framing option adds</h2>
+          <p>
+            Enable <strong>Okuma OSP7000L framing</strong> when the controller
+            expects a program-name header and a closing percent marker.
+            Serial2CNC wraps the file contents with two extra transmitted rows:
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Row</th>
+                  <th scope="col">Sent text</th>
+                  <th scope="col">Purpose</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">First</th>
+                  <td><code>$PART01.MIL%</code></td>
+                  <td>
+                    Program-name header: a literal <code>$</code>, the resolved
+                    program name, then <code>%</code>.
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Middle</th>
+                  <td>Your file's rows</td>
+                  <td>The existing program content, in its original order.</td>
+                </tr>
+                <tr>
+                  <th scope="row">Last</th>
+                  <td><code>%</code></td>
+                  <td>Closing marker after the final file row.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>How the program name is chosen</h3>
+          <p>
+            If you enter a program name, it is trimmed and converted to
+            uppercase, then used as entered. Include <code>.MIL</code> yourself
+            if needed; it is not added to a custom name. Leave the name blank to
+            use the filename without its extension, followed by
+            <code>.MIL</code>, in uppercase. For example,
+            <code>part01.nc</code> becomes <code>PART01.MIL</code>.
+          </p>
+          <figure class="payload">
+            <pre><code>$PART01.MIL%
+G01 X10 Z-5
+M02
+%</code></pre>
+            <figcaption>
+              Example transmitted payload for part01.nc containing two rows,
+              with framing enabled and the program name left blank. Illustrative
+              only, not a machining program.
+            </figcaption>
+          </figure>
+          <div class="note warning">
+            <p>
+              <strong>Framing adds rows; it does not replace them.</strong> The
+              source file is not modified. Existing headers or trailing
+              <code>%</code> rows are not detected or removed, so enabling
+              framing on an already framed file creates duplicate markers.
+              Disable framing if the file already contains the required wrapper
+              or if your controller uses a different format.
+            </p>
+          </div>
+          <p>
+            With framing disabled, only the file's rows are sent; the
+            program-name field has no effect. ASCII encoding and CRLF line
+            endings still apply.
+          </p>
+        </section>
+
+        <section id="delay" aria-labelledby="delay-title">
+          <span class="section-number">05 / TRANSFER DELAY</span>
+          <h2 id="delay-title">A pause between lines, not characters</h2>
+          <p>
+            <strong>Delay between lines (ms)</strong> adds a fixed wait after
+            sending each row, before sending the next one. It applies to TCP and
+            Serial, including the Okuma header and closing marker when framing
+            is enabled.
+          </p>
+          <div
+            class="timing"
+            aria-label="Example: send a row, wait 100 milliseconds, send the next row, wait 100 milliseconds, send the last row"
+          >
+            <span class="line">Send row 1</span
+            ><span class="pause">&rarr; 100 ms &rarr;</span
+            ><span class="line">Send row 2</span
+            ><span class="pause">&rarr; 100 ms &rarr;</span
+            ><span class="line">Last row</span>
+          </div>
+          <ul>
+            <li>
+              <strong>0 ms:</strong> no extra software pause. Transfer speed
+              still depends on the connection, serial baud rate, and flow
+              control.
+            </li>
+            <li>
+              <strong>100 ms:</strong> adds a tenth of a second between rows.
+              There is no delay before the first row or after the final row.
+            </li>
+            <li>
+              <strong>Timing example:</strong> 102 transmitted rows (100 file
+              rows plus 2 framing rows) have 101 gaps. At 100 ms, that adds
+              about 10.1 seconds, on top of connection time, transmission time,
+              and any flow-control waits.
+            </li>
+          </ul>
+          <p>
+            A delay can give a slower controller time to process incoming lines.
+            Use the machine's recommended value and increase it if the receiver
+            loses data. It does not change baud rate, pace individual
+            characters, or replace the correct handshake settings.
+          </p>
+          <div class="note">
+            <p>
+              <strong>Delay and flow control do different jobs.</strong> A delay
+              always waits the configured interval between rows. TCP XON/XOFF
+              additionally pauses before sending a line after XOFF and resumes
+              after XON; Serial uses the selected handshake mode. Either can
+              make a transfer take longer than the delay calculation alone.
+            </p>
+          </div>
+        </section>
+      </main>
     </div>
 
-    <div class="card">
-      <h2>Components</h2>
-      <ul>
-        <li>WPF Desktop: <code>Serial2CNC</code></li>
-        <li>Blazor UI: <code>Serial2CNC.Web</code></li>
-        <li>API Gateway: <code>Serial2CNC.Api</code></li>
-        <li>Transfer Agent: <code>Serial2CNC.Agent</code></li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h2>Source</h2>
-      <p><a href="https://github.com/EHoglid/Serial2CNC">github.com/EHoglid/Serial2CNC</a></p>
-    </div>
-  </div>
-</body>
+    <footer>
+      <div class="container">
+        <p>
+          Serial2CNC &middot; TCP / Serial &middot; Windows desktop &amp; server
+        </p>
+        <a href="https://github.com/EHoglid/Serial2CNC#readme"
+          >Full documentation &rarr;</a
+        >
+      </div>
+    </footer>
+  </body>
 </html>
