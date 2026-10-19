@@ -10,7 +10,12 @@
     <AgentPublishDir Condition="'$(AgentPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish\Agent</AgentPublishDir>
     <ApiPublishDir Condition="'$(ApiPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish\Api</ApiPublishDir>
     <WebPublishDir Condition="'$(WebPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish\Web</WebPublishDir>
-    <DefineConstants>$(DefineConstants);AgentPublishDir=$(AgentPublishDir);ApiPublishDir=$(ApiPublishDir);WebPublishDir=$(WebPublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <DesktopPublishDir Condition="'$(DesktopPublishDir)' == ''">$(MSBuildThisFileDirectory)..\artifacts\publish\Desktop</DesktopPublishDir>
+    <DefineConstants>$(DefineConstants);AgentPublishDir=$(AgentPublishDir);ApiPublishDir=$(ApiPublishDir);WebPublishDir=$(WebPublishDir);DesktopPublishDir=$(DesktopPublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.1" />
+  </ItemGroup>
 
 </Project>

@@ -22,8 +22,9 @@ Built-in support includes:
 
 ## Network access
 
-The Web UI is available on HTTPS port **62899**. API (62901) and Agent (62904)
-remain on loopback. The Web UI has no login or account management, and internal
+The Web UI defaults to HTTPS port **62899**. API (62901) and Agent (62904)
+remain on loopback. These ports can be changed in the MSI or service setup.
+The Web UI has no login or account management, and internal
 service requests do not use API keys. Use it only on a trusted private network;
 do not expose the Web UI or service ports to the public internet.
 
@@ -65,27 +66,53 @@ Reference:
 - Administrator access to install Windows services or run an MSI
 - A CNC program folder that the service account can read/write
 
-The simplest install path is an MSI that installs the Agent, API, and Web as Windows services. If you need a custom service account, use the manual service steps below instead.
+The MSI lets you install the standalone WPF desktop app, the Agent/API/Web server services, or both. If you need a custom service account, use the manual service steps below instead.
 
 The commands below publish self-contained Windows x64 applications, so the CNC computer does not need the .NET runtime installed.
 
 ### Basic install: MSI package
 
 1. Download `Serial2CNC-<version>-win-x64.msi` from [GitHub Releases](https://github.com/EHoglid/Serial2CNC/releases/latest), once a version has been released.
-2. Run the MSI and approve the administrator prompt. It registers the three services for automatic startup.
-3. Run the bundled service setup in **elevated PowerShell** (Windows PowerShell 5.1 or PowerShell 7):
+2. Run the MSI. On the feature-selection page, keep **WPF desktop application**, **Server applications**, or both (both are selected by default). Use each feature's dropdown to mark unwanted components as unavailable, then approve the administrator prompt when installing.
+3. If installing the server, the next page lets you choose the Web HTTPS, API, and Agent ports. Leaving them untouched or clearing a field uses the defaults: **62899**, **62901**, and **62904** respectively. All three must be different whole numbers from 1 to 65535 and available on this computer. API and Agent remain loopback-only regardless of port choice. These are service ports, not the CNC/converter's destination port.
+4. For a desktop-only installation, open **Serial2CNC Desktop** from the Start menu. No services, certificate provisioning, or firewall setup are needed. Skip the remaining server steps.
+5. For a server installation, run the bundled service setup in **elevated PowerShell** (Windows PowerShell 5.1 or 64-bit PowerShell 7):
 
    ```powershell
    & "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'
    ```
 
-   The program folder must already exist. Setup configures service access,
-   provisions the Web HTTPS certificate and starts the services. Trust the
+  The program folder must already exist. Services remain stopped until this
+  step. Setup automatically reads your MSI-selected ports, configures service
+  access, provisions the Web HTTPS certificate and starts the services. Trust the
    exported public certificate on client computers, then open
-   `https://<CNC-computer-name>:62899` and configure the program folder and
+  `https://<CNC-computer-name>:62899` (substitute your chosen Web port) and configure the program folder and
    TCP/Serial connection in **Settings**.
 
-No build tools or .NET runtime are required on the CNC computer. This is a service installation, not a tray/taskbar application; the UI runs in your browser.
+No build tools or separate .NET runtime are required on the CNC computer. The desktop app sends directly from your Windows session; the server runs independently of logon and is controlled through a browser. Their CNC settings are separate.
+
+For unattended installation, use `ADDLOCAL=DesktopFeature` for desktop only,
+`ADDLOCAL=MainFeature` for server only, or `ADDLOCAL=DesktopFeature,MainFeature`
+for both. For example, run as administrator:
+
+```powershell
+msiexec.exe /i .\Serial2CNC-1.0.0-win-x64.msi /qn /norestart ADDLOCAL=MainFeature WEBPORT=64443 APIPORT=64444 AGENTPORT=64445
+```
+
+Omit the port properties to retain saved MSI choices during an upgrade, or use
+the defaults on a fresh install. Server provisioning is still a separate step
+after an unattended install. Port settings are saved under
+`HKLM\SOFTWARE\EHoglid\Serial2CNC` and removed when the server feature is uninstalled.
+To change ports on an already provisioned server, rerun setup as administrator:
+
+```powershell
+& "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WebPort 64443 -ApiPort 64444 -AgentPort 64445
+```
+
+Successful setup remembers the new ports for MSI installations, updates service
+command lines and inter-service URLs, and replaces the Web firewall rule. It does
+not replace an existing valid HTTPS certificate. For manually registered
+services without MSI settings, supply the custom ports again on subsequent runs.
 
 Before the first release, or for an unreleased build, open **Actions > Windows MSI**, select a successful run, and download its `Serial2CNC-<version>-win-x64` artifact. Unzip it to obtain the MSI and SHA-256 checksum. Artifacts require GitHub sign-in and expire after the repository's artifact retention period.
 
@@ -194,7 +221,10 @@ If you want a tray icon or a single interactive EXE that appears in the taskbar 
 
 ### Optional WPF desktop app
 
-The WPF application is separate from the Web/API/Agent services. It can be published from the command line as a Windows desktop app:
+The WPF application runs independently of the Web/API/Agent services. The easiest
+installation is the MSI's **WPF desktop application** feature, which adds a
+**Serial2CNC Desktop** Start menu shortcut and installs the application under
+`C:\Program Files\Serial2CNC\Desktop`. You can also publish it from source:
 
 ```powershell
 dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true

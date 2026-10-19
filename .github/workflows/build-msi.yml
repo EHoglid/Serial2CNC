@@ -56,6 +56,69 @@ jobs:
           MSI_VERSION: ${{ steps.version.outputs.version }}
         run: .\build-msi.ps1 -Version $env:MSI_VERSION
 
+      - name: Test desktop-only and custom-port server-only installations
+        env:
+          MSI_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Join-Path $PWD "artifacts\installer\Serial2CNC-$env:MSI_VERSION-win-x64.msi"
+          $installDirectory = Join-Path $env:ProgramFiles 'Serial2CNC'
+          $desktopExe = Join-Path $installDirectory 'Desktop\Serial2CNC.exe'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Serial2CNC Desktop.lnk'
+          foreach ($feature in 'DesktopFeature', 'MainFeature') {
+            $installLog = Join-Path $PWD "artifacts\installer\install-$feature.log"
+            $uninstallLog = Join-Path $PWD "artifacts\installer\uninstall-$feature.log"
+            try {
+              $install = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart ADDLOCAL=$feature WEBPORT=64443 APIPORT=64444 AGENTPORT=64445 /L*v `"$installLog`"" -Wait -PassThru
+              if ($install.ExitCode -notin 0, 3010) {
+                throw "$feature installation failed with exit code $($install.ExitCode)."
+              }
+              $services = @(Get-Service -Name 'Serial2CNC.*' -ErrorAction SilentlyContinue)
+              if ($feature -eq 'DesktopFeature') {
+                if ($services.Count -ne 0 -or -not (Test-Path -LiteralPath $desktopExe) -or
+                  -not (Test-Path -LiteralPath $shortcut) -or
+                  (Test-Path -LiteralPath (Join-Path $installDirectory 'setup-services.ps1')) -or
+                  (Test-Path -LiteralPath 'HKLM:\SOFTWARE\EHoglid\Serial2CNC')) {
+                  throw 'Desktop-only installation must include the app and shortcut, without server components.'
+                }
+                $process = Start-Process -FilePath $desktopExe -WorkingDirectory $env:TEMP -PassThru
+                try {
+                  if (-not $process.WaitForInputIdle(30000)) { throw 'The desktop app did not become responsive.' }
+                  $process.Refresh()
+                  if ($process.HasExited -or $process.MainWindowHandle -eq 0) { throw 'The desktop app did not open its window.' }
+                } finally {
+                  if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+                  $process.Dispose()
+                }
+              } else {
+                if ($services.Count -ne 3 -or (Test-Path -LiteralPath $desktopExe) -or (Test-Path -LiteralPath $shortcut)) {
+                  throw 'Server-only installation must include exactly three services and no desktop app or shortcut.'
+                }
+                $ports = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\EHoglid\Serial2CNC'
+                if ($ports.WebPort -ne '64443' -or $ports.ApiPort -ne '64444' -or $ports.AgentPort -ne '64445') {
+                  throw 'MSI-selected ports were not persisted.'
+                }
+                $setup = Join-Path $installDirectory 'setup-services.ps1'
+                & $setup
+                & $setup
+                foreach ($url in 'http://127.0.0.1:64445/health', 'http://127.0.0.1:64444/health', 'https://localhost:64443/health') {
+                  if ((Invoke-WebRequest -Uri $url -SkipCertificateCheck -TimeoutSec 5).StatusCode -ne 200) {
+                    throw "Custom-port health check failed: $url"
+                  }
+                }
+                $rule = Get-NetFirewallRule -Name 'Serial2CNC-Web-HTTPS' | Get-NetFirewallPortFilter
+                if ($rule.LocalPort -ne '64443') { throw 'The firewall does not use the selected Web port.' }
+              }
+            } finally {
+              $uninstall = Start-Process msiexec.exe -ArgumentList "/x `"$msi`" /qn /norestart /L*v `"$uninstallLog`"" -Wait -PassThru
+              if ($uninstall.ExitCode -notin 0, 3010) { throw "$feature uninstall failed with exit code $($uninstall.ExitCode)." }
+            }
+            if ((Get-Service -Name 'Serial2CNC.*' -ErrorAction SilentlyContinue) -or
+              (Test-Path -LiteralPath $desktopExe) -or (Test-Path -LiteralPath $shortcut)) {
+              throw "$feature uninstall left services, desktop executable, or shortcut behind."
+            }
+          }
+
       - name: Test install, endpoints, and uninstall
         env:
           MSI_VERSION: ${{ steps.version.outputs.version }}
@@ -69,6 +132,10 @@ jobs:
               if ($install.ExitCode -notin 0, 3010) {
                   throw "MSI installation failed (exit code $($install.ExitCode)). See install.log."
               }
+                $desktopExe = Join-Path $env:ProgramFiles 'Serial2CNC\Desktop\Serial2CNC.exe'
+                if (-not (Test-Path -LiteralPath $desktopExe)) {
+                  throw 'The default combined installation must include the WPF desktop application.'
+                }
               foreach ($name in 'Serial2CNC.Agent', 'Serial2CNC.Api', 'Serial2CNC.Web') {
                   $service = Get-Service -Name $name -ErrorAction Stop
                   if ($service.Status -ne 'Stopped' -or $service.StartType -ne 'Automatic') {

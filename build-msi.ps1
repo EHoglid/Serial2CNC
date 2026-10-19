@@ -22,8 +22,13 @@ $outputRoot = Join-Path $repoRoot 'artifacts\installer'
 $buildOutput = Join-Path $publishRoot 'msi'
 
 try {
-    foreach ($project in 'Agent', 'Api', 'Web') {
-        $projectPath = Join-Path $repoRoot "Serial2CNC.$project\Serial2CNC.$project.csproj"
+    foreach ($project in 'Agent', 'Api', 'Web', 'Desktop') {
+        $projectPath = if ($project -eq 'Desktop') {
+            Join-Path $repoRoot 'Serial2CNC\Serial2CNC.csproj'
+        }
+        else {
+            Join-Path $repoRoot "Serial2CNC.$project\Serial2CNC.$project.csproj"
+        }
         $publishPath = Join-Path $publishRoot $project
         & dotnet publish $projectPath -c Release -r win-x64 --self-contained true `
             -p:UseAppHost=true -p:DebugType=None -p:DebugSymbols=false -o $publishPath
@@ -34,7 +39,8 @@ try {
 
     & dotnet build (Join-Path $repoRoot 'Serial2CNC.Installer\Serial2CNC.Installer.wixproj') -c Release `
         "-p:AgentPublishDir=$publishRoot\Agent" "-p:ApiPublishDir=$publishRoot\Api" `
-        "-p:WebPublishDir=$publishRoot\Web" "-p:ProductVersion=$Version" "-p:OutputPath=$buildOutput"
+        "-p:WebPublishDir=$publishRoot\Web" "-p:DesktopPublishDir=$publishRoot\Desktop" `
+        "-p:ProductVersion=$Version" "-p:OutputPath=$buildOutput"
     if ($LASTEXITCODE -ne 0) {
         throw "Building the MSI failed (exit code $LASTEXITCODE)."
     }
@@ -51,7 +57,8 @@ try {
     $hash = (Get-FileHash -LiteralPath $msiPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $(Split-Path -Leaf $msiPath)" | Set-Content -LiteralPath "$msiPath.sha256" -Encoding ascii
     Write-Host "Installer: $msiPath"
-    Write-Host 'After installation, run the bundled setup-services.ps1 elevated to configure and start services.'
+    Write-Host 'Select WPF desktop, server services, or both in the installer.'
+    Write-Host 'For server installations, run the bundled setup-services.ps1 elevated to configure HTTPS and start services using the selected ports.'
 }
 finally {
     if (Test-Path -LiteralPath $publishRoot) {

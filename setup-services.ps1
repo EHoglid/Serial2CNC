@@ -16,6 +16,12 @@ certificate even when settings.json already exists.
 Without it an existing certificate is preserved, or a self-signed one is made.
 .PARAMETER WorkingDirectory
 Optional existing transfer directory to which ONLY the Agent receives Modify.
+.PARAMETER WebPort
+Web HTTPS port. Defaults to the MSI selection, or 62899 for manual installs.
+.PARAMETER ApiPort
+Loopback API port. Defaults to the MSI selection, or 62901 for manual installs.
+.PARAMETER AgentPort
+Loopback Agent port. Defaults to the MSI selection, or 62904 for manual installs.
 .EXAMPLE
 .\setup-services.ps1 -WorkingDirectory C:\CNC
 #>
@@ -23,11 +29,37 @@ Optional existing transfer directory to which ONLY the Agent receives Modify.
 param(
     [string]$CertificateThumbprint,
     [string]$WorkingDirectory,
-    [string]$InstallDirectory = $PSScriptRoot
+    [string]$InstallDirectory = $PSScriptRoot,
+    [ValidateRange(1, 65535)]
+    [int]$WebPort = 62899,
+    [ValidateRange(1, 65535)]
+    [int]$ApiPort = 62901,
+    [ValidateRange(1, 65535)]
+    [int]$AgentPort = 62904
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$installerSettings = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\EHoglid\Serial2CNC' -ErrorAction SilentlyContinue
+foreach ($portName in 'WebPort', 'ApiPort', 'AgentPort') {
+    if (-not $PSBoundParameters.ContainsKey($portName) -and $null -ne $installerSettings) {
+        $savedPort = $installerSettings.PSObject.Properties[$portName]
+        if ($null -ne $savedPort) {
+            $port = 0
+            if (-not [int]::TryParse([string]$savedPort.Value, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+                throw "Invalid installed $portName. Choose a port between 1 and 65535."
+            }
+            Set-Variable -Name $portName -Value $port
+        }
+    }
+}
+if (@($WebPort, $ApiPort, $AgentPort | Select-Object -Unique).Count -ne 3) {
+    throw 'WebPort, ApiPort, and AgentPort must be different.'
+}
+$agentUrl = "http://127.0.0.1:$AgentPort"
+$apiUrl = "http://127.0.0.1:$ApiPort"
+$webUrl = "https://0.0.0.0:$WebPort"
 
 function New-Secret {
     $bytes = New-Object byte[] 48
@@ -41,7 +73,8 @@ function Set-PrivateAcl([string]$Path, [Security.Principal.SecurityIdentifier]$S
     if ($isDirectory) {
         $acl = New-Object Security.AccessControl.DirectorySecurity
         $inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-    } else {
+    }
+    else {
         $acl = New-Object Security.AccessControl.FileSecurity
         $inheritance = [Security.AccessControl.InheritanceFlags]::None
     }
@@ -50,11 +83,11 @@ function Set-PrivateAcl([string]$Path, [Security.Principal.SecurityIdentifier]$S
     $acl.SetOwner($administrators)
     foreach ($sid in @($administrators, (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))) {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            $sid, 'FullControl', $inheritance, 'None', 'Allow')))
+                    $sid, 'FullControl', $inheritance, 'None', 'Allow')))
     }
     if ($null -ne $ServiceSid) {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            $ServiceSid, 'Modify', $inheritance, 'None', 'Allow')))
+                    $ServiceSid, 'Modify', $inheritance, 'None', 'Allow')))
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
@@ -100,10 +133,12 @@ function Write-Configuration([string]$Component, $Configuration, [switch]$Replac
             $Configuration | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $staging -Encoding UTF8
             if ($exists) {
                 [IO.File]::Replace($staging, $path, [NullString]::Value)
-            } else {
+            }
+            else {
                 Move-Item -LiteralPath $staging -Destination $path
             }
-        } finally {
+        }
+        finally {
             if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Force }
         }
     }
@@ -122,9 +157,11 @@ function Wait-Health([string]$Url, [string]$PinnedThumbprint) {
             }
             $response = $request.GetResponse()
             if ([int]$response.StatusCode -eq 200) { return }
-        } catch {
+        }
+        catch {
             if ($attempt -eq 30) { throw "Health check failed: $Url" }
-        } finally {
+        }
+        finally {
             if ($null -ne $response) { $response.Dispose() }
         }
         Start-Sleep -Seconds 2
@@ -164,6 +201,17 @@ foreach ($component in 'Web', 'Api', 'Agent') {
     Stop-Service -Name "Serial2CNC.$component" -Force
 }
 
+$serviceArguments = @{
+    Agent = "--urls $agentUrl"
+    Api   = "--urls $apiUrl --Agent:BaseUrl=$agentUrl"
+    Web   = "--Api:BaseUrl=$apiUrl"
+}
+foreach ($component in 'Agent', 'Api', 'Web') {
+    $exe = Join-Path $InstallDirectory "$component\Serial2CNC.$component.exe"
+    & sc.exe config "Serial2CNC.$component" binPath= "`"$exe`" $($serviceArguments[$component])"
+    if ($LASTEXITCODE -ne 0) { throw "Could not configure Serial2CNC.$component ports." }
+}
+
 New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 Assert-NoReparsePoint $dataRoot
 Set-PrivateAcl $dataRoot $null
@@ -196,7 +244,7 @@ if ($WorkingDirectory) {
     }
     $acl = Get-Acl -LiteralPath $working.FullName
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-        $serviceSids.Agent, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+                $serviceSids.Agent, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
     Set-Acl -LiteralPath $working.FullName -AclObject $acl
 }
 
@@ -218,7 +266,8 @@ if ($null -eq $web -or $CertificateThumbprint) {
     try {
         if ($CertificateThumbprint) {
             $certificate = Get-Item -LiteralPath "Cert:\LocalMachine\My\$CertificateThumbprint"
-        } else {
+        }
+        else {
             $certificate = New-SelfSignedCertificate -DnsName @([Environment]::MachineName, 'localhost') `
                 -CertStoreLocation 'Cert:\LocalMachine\My' -KeyExportPolicy Exportable `
                 -NotAfter (Get-Date).AddYears(2) -FriendlyName 'Serial2CNC Web HTTPS'
@@ -241,19 +290,23 @@ if ($null -eq $web -or $CertificateThumbprint) {
         Export-Certificate -Cert $certificate -FilePath $publicCertificate -Force | Out-Null
         if ($null -eq $web) {
             $web = @{
-                Api = @{ BaseUrl = 'http://127.0.0.1:62901' }
+                Api           = @{ BaseUrl = $apiUrl }
                 DataDirectory = $webDirectory
-                Kestrel = @{ Endpoints = @{ Https = @{
-                    Url = 'https://0.0.0.0:62899'
-                    Certificate = @{ Path = $pfxPath; Password = $pfxPassword }
-                } } }
+                Kestrel       = @{ Endpoints = @{ Https = @{
+                            Url         = $webUrl
+                            Certificate = @{ Path = $pfxPath; Password = $pfxPassword }
+                        }
+                    }
+                }
             }
-        } else {
+        }
+        else {
             $web.Kestrel.Endpoints.Https.Certificate.Path = $pfxPath
             $web.Kestrel.Endpoints.Https.Certificate.Password = $pfxPassword
         }
         Write-Configuration 'Web' $web -Replace
-    } finally {
+    }
+    finally {
         # The service uses its private PFX; do not leave another private-key copy in the machine store.
         if ($generatedCertificate -and $null -ne $certificate) {
             Remove-Item -LiteralPath "Cert:\LocalMachine\My\$($certificate.Thumbprint)" -DeleteKey
@@ -265,24 +318,26 @@ Write-Configuration 'Agent' @{
     DataDirectory = (Join-Path $dataRoot 'Agent')
 } -Replace
 Write-Configuration 'Api' @{
-    Agent = @{ BaseUrl = 'http://127.0.0.1:62904' }
+    Agent = @{ BaseUrl = $agentUrl }
 } -Replace
 $web = Read-Configuration 'Web'
-$web.Api.BaseUrl = 'http://127.0.0.1:62901'
+$web.Api.BaseUrl = $apiUrl
+$web.Kestrel.Endpoints.Https.Url = $webUrl
 if ($web.Api -is [System.Collections.IDictionary]) {
     $web.Api.Remove('ApiKey')
-} else {
+}
+else {
     $web.Api.PSObject.Properties.Remove('ApiKey')
 }
 $web.DataDirectory = $webDirectory
 Write-Configuration 'Web' $web -Replace
 if ($web.DataDirectory -ine $webDirectory) { throw 'Existing Web DataDirectory must use its private ProgramData directory.' }
-if ($web.Api.BaseUrl -ne 'http://127.0.0.1:62901' -or
-    (Read-Configuration 'Api').Agent.BaseUrl -ne 'http://127.0.0.1:62904') {
+if ($web.Api.BaseUrl -ne $apiUrl -or
+    (Read-Configuration 'Api').Agent.BaseUrl -ne $agentUrl) {
     throw 'Existing API and Agent URLs must point to their loopback-only endpoints.'
 }
 $https = $web.Kestrel.Endpoints.Https
-if ($https.Url -ne 'https://0.0.0.0:62899') { throw 'Existing Web HTTPS binding must be https://0.0.0.0:62899.' }
+if ($https.Url -ne $webUrl) { throw "Web HTTPS binding must be $webUrl." }
 $privateCertificatePath = [IO.Path]::GetFullPath($https.Certificate.Path)
 if ((Split-Path -Parent $privateCertificatePath) -ine $webDirectory) {
     throw 'The private HTTPS PFX must be stored inside the private Web directory.'
@@ -296,23 +351,25 @@ try {
     if ($pfx.NotAfter -le (Get-Date)) { throw 'The Web certificate has expired; renew it before starting services.' }
     $thumbprint = $pfx.Thumbprint
     Export-Certificate -Cert $pfx -FilePath $publicCertificate -Force | Out-Null
-} finally { $pfx.Dispose() }
+}
+finally { $pfx.Dispose() }
 Set-PrivateAcl $publicCertificate $null
 
 $ruleName = 'Serial2CNC-Web-HTTPS'
 Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -Name $ruleName -DisplayName 'Serial2CNC Web HTTPS (local subnet)' `
-    -Direction Inbound -Action Allow -Protocol TCP -LocalPort 62899 -RemoteAddress LocalSubnet `
-    -Program $webExe -Profile Domain,Private | Out-Null
+    -Direction Inbound -Action Allow -Protocol TCP -LocalPort $WebPort -RemoteAddress LocalSubnet `
+    -Program $webExe -Profile Domain, Private | Out-Null
 
 try {
     foreach ($component in 'Agent', 'Api', 'Web') {
         Start-Service -Name "Serial2CNC.$component"
-        if ($component -eq 'Agent') { Wait-Health 'http://127.0.0.1:62904/health' $null }
-        if ($component -eq 'Api') { Wait-Health 'http://127.0.0.1:62901/health' $null }
-        if ($component -eq 'Web') { Wait-Health 'https://localhost:62899/health' $thumbprint }
+        if ($component -eq 'Agent') { Wait-Health "$agentUrl/health" $null }
+        if ($component -eq 'Api') { Wait-Health "$apiUrl/health" $null }
+        if ($component -eq 'Web') { Wait-Health "https://localhost:$WebPort/health" $thumbprint }
     }
-} catch {
+}
+catch {
     foreach ($component in 'Web', 'Api', 'Agent') { Stop-Service -Name "Serial2CNC.$component" -Force -ErrorAction SilentlyContinue }
     throw
 }
@@ -322,6 +379,13 @@ foreach ($component in 'Agent', 'Api', 'Web') {
         Remove-Item -LiteralPath $legacyConfigPath -Force
     }
 }
+if ($null -ne $installerSettings) {
+    foreach ($portName in 'WebPort', 'ApiPort', 'AgentPort') {
+        Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\EHoglid\Serial2CNC' -Name $portName `
+            -Value ([string](Get-Variable -Name $portName -ValueOnly))
+    }
+}
 Write-Host "Provisioning complete. Public certificate: $publicCertificate"
+Write-Host "Web interface: https://$([Environment]::MachineName):$WebPort"
 Write-Host "Certificate SHA-1 thumbprint: $thumbprint"
 Write-Warning 'Verify the certificate fingerprint out of band and trust ONLY this public certificate on clients. No certificate was added to trusted roots. Never share the private PFX.'

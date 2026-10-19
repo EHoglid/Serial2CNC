@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="Serial2CNC"
     Manufacturer="EHoglid"
@@ -11,17 +11,96 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Serial2CNC is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <Property Id="WEBPORT" Secure="yes" />
+    <Property Id="APIPORT" Secure="yes" />
+    <Property Id="AGENTPORT" Secure="yes" />
+    <Property Id="SAVEDWEBPORT">
+      <RegistrySearch Id="SavedWebPort" Root="HKLM" Key="SOFTWARE\EHoglid\Serial2CNC" Name="WebPort" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="SAVEDAPIPORT">
+      <RegistrySearch Id="SavedApiPort" Root="HKLM" Key="SOFTWARE\EHoglid\Serial2CNC" Name="ApiPort" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="SAVEDAGENTPORT">
+      <RegistrySearch Id="SavedAgentPort" Root="HKLM" Key="SOFTWARE\EHoglid\Serial2CNC" Name="AgentPort" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty Id="WEBPORT" Action="RestoreWebPort" Value="[SAVEDWEBPORT]" After="AppSearch" Sequence="both" Condition="NOT WEBPORT AND SAVEDWEBPORT" />
+    <SetProperty Id="APIPORT" Action="RestoreApiPort" Value="[SAVEDAPIPORT]" After="AppSearch" Sequence="both" Condition="NOT APIPORT AND SAVEDAPIPORT" />
+    <SetProperty Id="AGENTPORT" Action="RestoreAgentPort" Value="[SAVEDAGENTPORT]" After="AppSearch" Sequence="both" Condition="NOT AGENTPORT AND SAVEDAGENTPORT" />
+    <SetProperty Id="WEBPORT" Value="62899" Before="LaunchConditions" Sequence="both" Condition="NOT WEBPORT" />
+    <SetProperty Id="APIPORT" Value="62901" Before="LaunchConditions" Sequence="both" Condition="NOT APIPORT" />
+    <SetProperty Id="AGENTPORT" Value="62904" Before="LaunchConditions" Sequence="both" Condition="NOT AGENTPORT" />
+    <Launch Condition="REMOVE = &quot;ALL&quot; OR (WEBPORT &gt;= 1 AND WEBPORT &lt;= 65535 AND APIPORT &gt;= 1 AND APIPORT &lt;= 65535 AND AGENTPORT &gt;= 1 AND AGENTPORT &lt;= 65535 AND WEBPORT &lt;&gt; APIPORT AND WEBPORT &lt;&gt; AGENTPORT AND APIPORT &lt;&gt; AGENTPORT)"
+            Message="Web, API, and Agent ports must be different whole numbers between 1 and 65535." />
+    <Icon Id="DesktopIcon.exe" SourceFile="$(sys.SOURCEFILEDIR)..\Serial2CNC\Assets\Serial2CNC.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DesktopIcon.exe" />
+    <ui:WixUI Id="WixUI_FeatureTree" />
+
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="2" Condition="NOT Installed" />
+      <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="NOT Installed" />
+      <Publish Dialog="CustomizeDlg" Control="Next" Event="NewDialog" Value="ServerPortsDlg" Order="2" Condition="(&amp;MainFeature = 3) AND (NOT Installed OR !MainFeature &lt;&gt; 3)" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ServerPortsDlg" Order="4" Condition="(&amp;MainFeature = 3) AND (NOT Installed OR !MainFeature &lt;&gt; 3) AND (NOT Installed OR WixUI_InstallMode = &quot;Change&quot;)" />
+      <Dialog Id="ServerPortsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="Title" Type="Text" X="20" Y="15" Width="330" Height="20" Text="{\WixUI_Font_Bigger}Server ports" />
+        <Control Id="Description" Type="Text" X="20" Y="43" Width="330" Height="30" Text="Use the default ports or choose three different ports (1-65535). Empty fields use the defaults." />
+        <Control Id="WebLabel" Type="Text" X="20" Y="85" Width="210" Height="15" Text="Web HTTPS (default 62899):" />
+        <Control Id="WebPort" Type="Edit" X="245" Y="82" Width="85" Height="18" Property="WEBPORT" Integer="yes" />
+        <Control Id="ApiLabel" Type="Text" X="20" Y="115" Width="210" Height="15" Text="API, loopback only (default 62901):" />
+        <Control Id="ApiPort" Type="Edit" X="245" Y="112" Width="85" Height="18" Property="APIPORT" Integer="yes" />
+        <Control Id="AgentLabel" Type="Text" X="20" Y="145" Width="210" Height="15" Text="Agent, loopback only (default 62904):" />
+        <Control Id="AgentPort" Type="Edit" X="245" Y="142" Width="85" Height="18" Property="AGENTPORT" Integer="yes" />
+        <Control Id="SetupNotice" Type="Text" X="20" Y="175" Width="330" Height="48" Text="After installation, run setup-services.ps1 as administrator to configure folder access and HTTPS, then start the server. It automatically uses these ports. There is no application login; use a trusted network only." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="CustomizeDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+          <Publish Property="WEBPORT" Value="62899" Order="1" Condition="NOT WEBPORT" />
+          <Publish Property="APIPORT" Value="62901" Order="2" Condition="NOT APIPORT" />
+          <Publish Property="AGENTPORT" Value="62904" Order="3" Condition="NOT AGENTPORT" />
+          <Publish Event="SpawnDialog" Value="InvalidPortsDlg" Order="4" Condition="NOT (WEBPORT &gt;= 1 AND WEBPORT &lt;= 65535 AND APIPORT &gt;= 1 AND APIPORT &lt;= 65535 AND AGENTPORT &gt;= 1 AND AGENTPORT &lt;= 65535 AND WEBPORT &lt;&gt; APIPORT AND WEBPORT &lt;&gt; AGENTPORT AND APIPORT &lt;&gt; AGENTPORT)" />
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="5" Condition="WEBPORT &gt;= 1 AND WEBPORT &lt;= 65535 AND APIPORT &gt;= 1 AND APIPORT &lt;= 65535 AND AGENTPORT &gt;= 1 AND AGENTPORT &lt;= 65535 AND WEBPORT &lt;&gt; APIPORT AND WEBPORT &lt;&gt; AGENTPORT AND APIPORT &lt;&gt; AGENTPORT" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+      <Dialog Id="InvalidPortsDlg" Width="300" Height="100" Title="Invalid server ports">
+        <Control Id="Message" Type="Text" X="20" Y="15" Width="260" Height="40" Text="Enter three different whole-number ports between 1 and 65535. Leave a field empty to use its default." />
+        <Control Id="OK" Type="PushButton" X="122" Y="70" Width="56" Height="17" Default="yes" Cancel="yes" Text="OK">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+    </UI>
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Serial2CNC">
+        <Directory Id="DESKTOPFOLDER" Name="Desktop" />
         <Directory Id="AGENTFOLDER" Name="Agent" />
         <Directory Id="APIFOLDER" Name="Api" />
         <Directory Id="WEBFOLDER" Name="Web" />
       </Directory>
     </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <DirectoryRef Id="DESKTOPFOLDER">
+      <Component Id="DesktopExeComponent" Guid="c721d421-1bee-439e-a024-54cbe00cd19d">
+        <File Id="DesktopExe" Source="$(var.DesktopPublishDir)\Serial2CNC.exe" KeyPath="yes">
+          <Shortcut Id="DesktopStartMenuShortcut" Directory="ProgramMenuFolder" Name="Serial2CNC Desktop" WorkingDirectory="DESKTOPFOLDER" Advertise="yes" Icon="DesktopIcon.exe" />
+        </File>
+      </Component>
+    </DirectoryRef>
 
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="ServiceSetupComponent" Guid="6886d472-3533-4365-a736-360e04acde7c">
         <File Id="ServiceSetupScript" Source="$(sys.SOURCEFILEDIR)..\setup-services.ps1" KeyPath="yes" />
+      </Component>
+      <Component Id="ServerPortsComponent" Guid="cb2ad9dc-cb74-4ef2-97c3-d6d971db58d7">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\EHoglid\Serial2CNC">
+          <RegistryValue Name="WebPort" Type="string" Value="[WEBPORT]" KeyPath="yes" />
+          <RegistryValue Name="ApiPort" Type="string" Value="[APIPORT]" />
+          <RegistryValue Name="AgentPort" Type="string" Value="[AGENTPORT]" />
+        </RegistryKey>
       </Component>
     </DirectoryRef>
 
@@ -33,7 +112,7 @@
           Name="Serial2CNC.Agent"
           DisplayName="Serial2CNC Transfer Agent"
           Description="Serial2CNC transfer runtime service"
-          Arguments="--urls http://127.0.0.1:62904"
+          Arguments="--urls http://127.0.0.1:[AGENTPORT]"
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
@@ -55,7 +134,7 @@
           Name="Serial2CNC.Api"
           DisplayName="Serial2CNC API"
           Description="Serial2CNC API gateway and log hub"
-          Arguments="--urls http://127.0.0.1:62901 --Agent:BaseUrl=http://127.0.0.1:62904"
+          Arguments="--urls http://127.0.0.1:[APIPORT] --Agent:BaseUrl=http://127.0.0.1:[AGENTPORT]"
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
@@ -79,7 +158,7 @@
           Name="Serial2CNC.Web"
           DisplayName="Serial2CNC Web UI"
           Description="Serial2CNC remote web UI"
-          Arguments="--Api:BaseUrl=http://127.0.0.1:62901"
+          Arguments="--Api:BaseUrl=http://127.0.0.1:[APIPORT]"
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
@@ -95,11 +174,18 @@
       </Component>
     </DirectoryRef>
 
-    <Feature Id="MainFeature" Title="Serial2CNC" Level="1">
+    <Feature Id="DesktopFeature" Title="WPF desktop application" Description="Standalone Windows application with a Start menu shortcut. No server services required." Level="1" AllowAbsent="yes" AllowAdvertise="no">
+      <ComponentRef Id="DesktopExeComponent" />
+      <Files Directory="DESKTOPFOLDER" Include="$(var.DesktopPublishDir)\**">
+        <Exclude Files="$(var.DesktopPublishDir)\Serial2CNC.exe" />
+      </Files>
+    </Feature>
+    <Feature Id="MainFeature" Title="Server applications" Description="Agent, API, and Web Windows services. Run setup-services.ps1 as administrator after installation to configure HTTPS and start the server." Level="1" AllowAbsent="yes" AllowAdvertise="no">
       <ComponentRef Id="AgentExeComponent" />
       <ComponentRef Id="ApiExeComponent" />
       <ComponentRef Id="WebExeComponent" />
       <ComponentRef Id="ServiceSetupComponent" />
+      <ComponentRef Id="ServerPortsComponent" />
       <Files Directory="AGENTFOLDER" Include="$(var.AgentPublishDir)\**">
         <Exclude Files="$(var.AgentPublishDir)\Serial2CNC.Agent.exe" />
       </Files>

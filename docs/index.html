@@ -8,6 +8,7 @@
       content="Set up Serial2CNC as a Windows transfer server or a standalone WPF desktop app. Configure TCP, Serial, Okuma OSP7000L framing, and line delays."
     />
     <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
     <title>Serial2CNC | Setup &amp; Transfer Guide</title>
     <style>
       :root {
@@ -541,19 +542,26 @@
               <a href="https://github.com/EHoglid/Serial2CNC/releases/latest"
                 >GitHub Releases</a
               >
-              when a release is available. Run it and approve the administrator
-              prompt. The self-contained package needs neither Visual Studio nor
-              a separate .NET runtime.
+              when a release is available. Select
+              <strong>Server applications</strong> in the feature list; keep
+              <strong>WPF desktop application</strong> selected too if you want
+              both. Both are selected by default. On the next page, keep the
+              default Web/API/Agent ports (<code>62899</code> /
+              <code>62901</code> / <code>62904</code>) or enter three different
+              available ports from 1 to 65535. Clearing a field restores its
+              default. Approve the administrator prompt to install. No Visual
+              Studio or separate .NET runtime is required.
             </li>
             <li>
               <strong>Configure and start the services.</strong> Open PowerShell
               as administrator and run:
               <pre><code>&amp; "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'</code></pre>
               <p>
-                Setup grants the Agent access to that folder, provisions the Web
-                HTTPS certificate, and starts the services. The services run
-                under separate, least-privilege virtual accounts, not
-                LocalSystem.
+                Services remain stopped until this step. Setup automatically
+                uses the ports selected in the MSI, grants the Agent access to
+                that folder, provisions the Web HTTPS certificate, and starts
+                the services. The services run under separate, least-privilege
+                virtual accounts, not LocalSystem.
               </p>
             </li>
             <li>
@@ -572,9 +580,10 @@
             </li>
             <li>
               <strong>Open the Web interface.</strong> Visit
-              <code>https://&lt;CNC-computer-name&gt;:62899</code>. Use the
-              computer name covered by the certificate, not its IP address. Do
-              not bypass certificate warnings.
+              <code>https://&lt;CNC-computer-name&gt;:62899</code>, substituting
+              your selected Web port if changed. Use the computer name covered
+              by the certificate, not its IP address. Do not bypass certificate
+              warnings.
             </li>
             <li>
               <strong>Save settings, then transfer.</strong> Set the Agent's
@@ -593,10 +602,11 @@
               <strong
                 >Trusted networks only. There is no application login.</strong
               >
-              Setup opens Web HTTPS port <code>62899</code> to the local subnet;
-              API <code>62901</code> and Agent <code>62904</code> stay on
-              loopback. Do not expose these services to the public internet.
-              Review existing firewall rules as well.
+              Setup opens only the selected Web HTTPS port (default
+              <code>62899</code>) to the local subnet. API (default
+              <code>62901</code>) and Agent (default <code>62904</code>) stay on
+              loopback even with custom ports. Do not expose these services to
+              the public internet. Review existing firewall rules as well.
             </p>
           </aside>
           <p>
@@ -624,27 +634,30 @@
           <span class="section-number">02 / WPF DESKTOP</span>
           <h2 id="desktop-title">Send directly from Windows</h2>
           <p class="section-intro">
-            The WPF application is standalone and separate from the server MSI.
-            It reads local files and connects directly to the CNC or converter
-            using your Windows account.
+            The WPF application runs independently of the server services and is
+            available as an option in the same MSI. It reads local files and
+            connects directly to the CNC or converter using your Windows
+            account.
           </p>
           <ol>
             <li>
-              <strong>Build the desktop application.</strong> On a Windows build
-              computer with the
-              <a href="https://dotnet.microsoft.com/download/dotnet/10.0"
-                >.NET 10 SDK</a
-              >, get the source and publish:
-              <pre><code>git clone https://github.com/EHoglid/Serial2CNC.git
-Set-Location .\Serial2CNC
-dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o .\artifacts\desktop</code></pre>
+              <strong>Install the desktop feature.</strong> Download the Windows
+              x64 MSI from
+              <a href="https://github.com/EHoglid/Serial2CNC/releases/latest"
+                >GitHub Releases</a
+              >
+              when available. Keep <strong>WPF desktop application</strong>
+              selected. For desktop only, use the feature dropdown to mark
+              <strong>Server applications</strong> as unavailable. Finish the
+              installation and approve the administrator prompt.
             </li>
             <li>
               <strong>Launch the app.</strong> Open
-              <code>artifacts\desktop\Serial2CNC.exe</code>. To use another
-              Windows x64 computer, copy the entire <code>desktop</code> output
-              folder, not just the EXE. No separate .NET runtime or Windows
-              services are required.
+              <strong>Serial2CNC Desktop</strong>
+              from the Start menu. The default application location is
+              <code>C:\Program Files\Serial2CNC\Desktop\Serial2CNC.exe</code>.
+              No separate .NET runtime, Windows services, HTTPS certificate, or
+              server-port configuration is required for desktop-only use.
             </li>
             <li>
               <strong>Choose the connection.</strong> Select
@@ -659,6 +672,13 @@ dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-conta
               monitor progress until it finishes.
             </li>
           </ol>
+          <p>
+            Prefer to build from source? See the
+            <a
+              href="https://github.com/EHoglid/Serial2CNC#optional-wpf-desktop-app"
+              >WPF publish instructions</a
+            >.
+          </p>
           <div class="note">
             <p>
               <strong>Choose one sender per connection.</strong> The WPF app
