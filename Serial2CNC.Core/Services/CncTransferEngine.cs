@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Serial2CNC.Models;
 using System.IO;
@@ -38,6 +39,7 @@ public sealed class CncTransferEngine
 
             var line = payloadLines[i];
             await transport.SendLineAsync(line, cancellationToken);
+            var sentAt = Stopwatch.GetTimestamp();
 
             report(new TransferProgress
             {
@@ -53,7 +55,7 @@ public sealed class CncTransferEngine
 
             if (delayMs > 0 && i < payloadLines.Count - 1)
             {
-                await Task.Delay(delayMs, cancellationToken);
+                await DelayAtLeastAsync(sentAt, TimeSpan.FromMilliseconds(delayMs), cancellationToken);
             }
         }
 
@@ -63,6 +65,21 @@ public sealed class CncTransferEngine
             Current = payloadLines.Count,
             Total = payloadLines.Count
         });
+    }
+
+    // Timers may fire slightly early (notably on Linux), so keep waiting until the full delay has elapsed.
+    private static async Task DelayAtLeastAsync(long startedAt, TimeSpan delay, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var remaining = delay - Stopwatch.GetElapsedTime(startedAt);
+            if (remaining <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, Math.Ceiling(remaining.TotalMilliseconds))), cancellationToken);
+        }
     }
 
     private static IEnumerable<string> BuildPayloadLines(IEnumerable<string> fileLines, TransferOptions transfer)

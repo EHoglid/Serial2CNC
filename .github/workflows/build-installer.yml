@@ -46,7 +46,9 @@ jobs:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: ./.github/scripts/Get-Version.ps1 -Version $env:REQUESTED_VERSION -GitHubOutput
       - name: Install Inno Setup
-        run: choco install innosetup --version=6.7.3 --no-progress -y
+        run: |
+          choco install innosetup --version=6.7.1 --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "Installing Inno Setup failed (exit code $LASTEXITCODE)." }
       - name: Build EXE installer
         env:
           INSTALLER_VERSION: ${{ steps.version.outputs.version }}

@@ -35,7 +35,7 @@ public sealed class LineDelayTests : IDisposable
         for (var index = 1; index < transport.Timestamps.Count; index++)
         {
             var elapsed = Stopwatch.GetElapsedTime(transport.Timestamps[index - 1], transport.Timestamps[index]);
-            Assert.True(elapsed.TotalMilliseconds >= delayMs - 1,
+            Assert.True(elapsed.TotalMilliseconds >= delayMs,
                 $"Line {index + 1} followed after {elapsed.TotalMilliseconds:F2} ms; configured delay is {delayMs} ms.");
         }
     }
@@ -75,7 +75,7 @@ public sealed class LineDelayTests : IDisposable
         }, _ => { }, CancellationToken.None);
 
         var headerGap = Stopwatch.GetElapsedTime(transport.Timestamps[0], transport.Timestamps[1]);
-        Assert.True(headerGap.TotalMilliseconds >= CncTransferEngine.OspHeaderDelayMs - 1,
+        Assert.True(headerGap.TotalMilliseconds >= CncTransferEngine.OspHeaderDelayMs,
             $"First program line followed the header after {headerGap.TotalMilliseconds:F2} ms.");
         var lineGap = Stopwatch.GetElapsedTime(transport.Timestamps[1], transport.Timestamps[2]);
         Assert.True(lineGap.TotalMilliseconds < CncTransferEngine.OspHeaderDelayMs,
