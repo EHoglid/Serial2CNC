@@ -6,13 +6,62 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        type: string
+        required: false
+        default: ''
+      version:
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
+  version:
+    name: Resolve and test version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_suffix: ${{ steps.version.outputs.version_suffix }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore GitVersion
+        run: dotnet tool restore
+
+      - name: Test version handling
+        shell: pwsh
+        run: ./.github/scripts/Test-Version.ps1
+
+      - name: Calculate version
+        id: version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: ./.github/scripts/Get-Version.ps1 -Version $env:REQUESTED_VERSION -GitHubOutput
+
   cross-platform:
     name: Cross-platform (${{ matrix.os }})
+    needs: version
+    env:
+      VersionPrefix: ${{ needs.version.outputs.version }}
+      VersionSuffix: ${{ needs.version.outputs.version_suffix }}
+      ProductVersion: ${{ needs.version.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,6 +71,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
@@ -39,11 +91,19 @@ jobs:
 
   windows-desktop:
     name: Windows desktop
+    needs: version
     runs-on: windows-latest
+    env:
+      VersionPrefix: ${{ needs.version.outputs.version }}
+      VersionSuffix: ${{ needs.version.outputs.version_suffix }}
+      ProductVersion: ${{ needs.version.outputs.version }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5

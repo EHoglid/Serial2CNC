@@ -1,0 +1,15 @@
+workflow: GitHubFlow/v1
+next-version: 1.0.0
+tag-prefix: '[vV]?'
+mode: ContinuousDelivery
+increment: Patch
+commit-message-incrementing: Disabled
+update-build-number: false
+assembly-file-versioning-format: '{Major}.{Minor}.{Patch}.0'
+branches:
+  main:
+    label: ci
+    increment: Inherit
+  unknown:
+    prevent-increment:
+      when-current-commit-tagged: true

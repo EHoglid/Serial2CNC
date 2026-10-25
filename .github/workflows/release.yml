@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version increment (the first release starts at 1.0.0)'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+concurrency:
+  group: serial2cnc-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Select release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - name: Require main branch
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') {
+              throw 'Run the release workflow from main. Other branches can build but cannot publish releases.'
+          }
+
+      - name: Checkout release commit and full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore GitVersion
+        run: dotnet tool restore
+
+      - name: Calculate release version
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_BUMP: ${{ inputs.bump }}
+        run: ./.github/scripts/Get-Version.ps1 -Mode Release -Bump $env:RELEASE_BUMP -GitHubOutput
+
+      - name: Summarize release plan
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          "## Planned release: $env:RELEASE_TAG" >> $env:GITHUB_STEP_SUMMARY
+          "Commit: $env:RELEASE_SHA" >> $env:GITHUB_STEP_SUMMARY
+          'Publication requires the Windows/Linux builds and installer smoke tests to pass.' >> $env:GITHUB_STEP_SUMMARY
+
+  checks:
+    name: Build and test release
+    needs: prepare
+    uses: ./.github/workflows/build-test.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  installer:
+    name: Build and test installer
+    needs: prepare
+    uses: ./.github/workflows/build-installer.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    name: Tag and publish tested release
+    needs: [prepare, checks, installer]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Download tested installer
+        uses: actions/download-artifact@v7
+        with:
+          name: Serial2CNC-${{ needs.prepare.outputs.version }}-win-x64
+          path: installer
+
+      - name: Verify assets, create tag, and publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = "installer/Serial2CNC-$env:RELEASE_VERSION-win-x64.exe"
+          $expected = (Get-Content -LiteralPath "$installer.sha256" -Raw).Trim().Split(' ')[0]
+          if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or
+              (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ine $expected) {
+              throw 'The tested installer checksum is invalid.'
+          }
+          git fetch origin --tags
+          if ($LASTEXITCODE -ne 0) { throw 'Could not refresh release tags.' }
+          $tags = @(git tag --list 'v*')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read release tags.' }
+          $latest = $tags | Where-Object { $_ -cmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' } |
+              ForEach-Object { [version]$_.Substring(1) } | Sort-Object -Descending | Select-Object -First 1
+          if ($null -ne $latest -and $latest -gt [version]$env:RELEASE_VERSION) {
+              throw 'A newer release was tagged while this build ran. Start a new release run.'
+          }
+          if ($tags -ccontains $env:RELEASE_TAG) {
+              $tagSha = git rev-parse "$env:RELEASE_TAG^{commit}"
+              if ($LASTEXITCODE -ne 0 -or $tagSha -ne $env:RELEASE_SHA) {
+                  throw 'The release tag already exists on a different commit. It will not be moved.'
+              }
+          } else {
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git -c tag.gpgsign=false tag -a $env:RELEASE_TAG $env:RELEASE_SHA -m "Serial2CNC $env:RELEASE_VERSION"
+              if ($LASTEXITCODE -ne 0) { throw 'Could not create the release tag.' }
+              git push origin "refs/tags/$env:RELEASE_TAG"
+              if ($LASTEXITCODE -ne 0) { throw 'Could not push the release tag.' }
+          }
+          gh release create $env:RELEASE_TAG $installer "$installer.sha256" `
+              --verify-tag --generate-notes --title "Serial2CNC $env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Release publication failed. Existing release assets are never overwritten. Check GitHub before retrying the failed job.'
+          }

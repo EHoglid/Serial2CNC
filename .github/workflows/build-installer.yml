@@ -3,16 +3,19 @@ name: Windows EXE
 on:
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+  workflow_call:
     inputs:
-      version:
-        description: "Installer version (major.minor.patch)"
-        required: true
-        default: "1.0.0"
+      source_ref:
         type: string
+        required: false
+        default: ''
+      version:
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -20,35 +23,35 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-      - name: Select version
+      - name: Restore GitVersion
+        run: dotnet tool restore
+      - name: Calculate version
         id: version
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
-        run: |
-          $version = '1.0.0'
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-              $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          } elseif ($env:REQUESTED_VERSION) {
-              $version = $env:REQUESTED_VERSION
-          }
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-              throw 'Use a version such as 1.0.0 or tag v1.0.0.'
-          }
-          "version=$(([version]$version).ToString(3))" >> $env:GITHUB_OUTPUT
+        run: ./.github/scripts/Get-Version.ps1 -Version $env:REQUESTED_VERSION -GitHubOutput
       - name: Install Inno Setup
         run: choco install innosetup --version=6.7.3 --no-progress -y
       - name: Build EXE installer
         env:
           INSTALLER_VERSION: ${{ steps.version.outputs.version }}
-        run: .\build-installer.ps1 -Version $env:INSTALLER_VERSION
+          INSTALLER_VERSION_SUFFIX: ${{ steps.version.outputs.version_suffix }}
+        run: .\build-installer.ps1 -Version $env:INSTALLER_VERSION -VersionSuffix $env:INSTALLER_VERSION_SUFFIX
       - name: Verify install and uninstall
         env:
           INSTALLER_VERSION: ${{ steps.version.outputs.version }}
@@ -73,31 +76,8 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: Serial2CNC-${{ steps.version.outputs.version }}-win-x64
+          name: Serial2CNC-${{ steps.version.outputs.full_version }}-win-x64
           path: |
             artifacts/installer/*.exe
             artifacts/installer/*.sha256
           if-no-files-found: error
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: Serial2CNC-*-win-x64
-          path: installer
-          merge-multiple: true
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          if gh release view "$RELEASE_TAG"; then
-            gh release upload "$RELEASE_TAG" installer/*.exe installer/*.sha256 --clobber
-          else
-            gh release create "$RELEASE_TAG" installer/*.exe installer/*.sha256 --verify-tag --generate-notes
-          fi

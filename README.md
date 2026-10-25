@@ -175,14 +175,15 @@ The cross-platform solution filter excludes WPF.
 To build the Windows EXE installer, install **Inno Setup 6**, then run:
 
 ```powershell
-.\build-installer.ps1 -Version 1.0.0
+dotnet tool restore
+.\build-installer.ps1
 ```
 
+Without `-Version`, the script calculates the version with GitVersion; pass
+`-Version 1.0.0` to override it locally (this does not create a tag or release).
 Use `-IsccPath` if the Inno Setup compiler is installed elsewhere. The script
 publishes the self-contained desktop app, including the embedded web application
 and static assets, then produces the EXE and checksum in `artifacts\installer`.
-The **Windows EXE** workflow builds and verifies installation/uninstallation;
-pushing a `v<major>.<minor>.<patch>` tag publishes those assets to a GitHub Release.
 
 ### Migrating older installations
 
@@ -194,3 +195,48 @@ destination and program folder in the new application's settings. Do not run old
 and new transfer applications against the same CNC device at the same time.
 
 Reference: [USR-W610 product page](https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html).
+
+## Versioning and CI
+
+- **Versioning:** [GitVersion.yml](./GitVersion.yml) configures GitHub Flow with
+  patch increments by default. The pinned .NET tool is restored with
+  `dotnet tool restore`. [Directory.Build.props](./Directory.Build.props) shares
+  the calculated version across the .NET projects. Untagged `main` builds use a
+  version such as `1.0.1-ci.12`; feature builds have their own prerelease label.
+  Assembly informational versions also include the source commit. The installer
+  file name uses the numeric portion of the version.
+- **Build and Test** workflow for push/PR on `main` and manual runs: tests
+  versioning, then builds and tests [Serial2CNC.CrossPlatform.slnf](./Serial2CNC.CrossPlatform.slnf)
+  on Windows and Linux and builds the WPF desktop app on Windows.
+  Hardware-dependent serial/TCP transfers are not exercised.
+- **Windows EXE** workflow builds the installer for pushes/PRs on `main` and
+  manual runs, verifies installation, embedded web assets and uninstallation,
+  and uploads the EXE and checksum as an artifact.
+- **Release** is manually triggered and reuses both workflows for a single pinned
+  source commit. It is the only workflow that creates release tags and publishes
+  GitHub Releases.
+- **Docker Compose Validate** checks the Compose configuration.
+- **GitHub Pages** publishes the project page from `docs/`.
+
+### Publish a downloadable installer
+
+1. Merge the changes you want to release into `main`.
+2. Open **Actions > Release > Run workflow** and select the **main** branch.
+3. Choose **patch**, **minor**, or **major**. GitVersion calculates the next
+   release version. The first release starts at **1.0.0**; after `v1.2.3`, a patch
+   release becomes `1.2.4`, minor becomes `1.3.0`, and major becomes `2.0.0`.
+4. Start the workflow. It runs the Windows/Linux builds, version checks and the
+   EXE installation smoke test against the same commit.
+5. Only after all checks pass does it verify the installer checksum, push the
+   annotated `v<major>.<minor>.<patch>` tag, and publish a GitHub Release with
+   generated notes, the EXE installer and its SHA-256 checksum.
+
+You do not need to edit version numbers or create tags manually. A commit that
+already has a release tag is rejected. Published releases and assets are never
+overwritten. Use **Actions > Windows EXE > Run workflow** when you only want a
+build artifact, not a release.
+
+## License
+
+Serial2CNC is licensed under the [Apache License 2.0](./LICENSE).
+Third-party dependencies remain subject to their respective licenses.
