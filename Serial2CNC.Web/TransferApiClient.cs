@@ -92,7 +92,7 @@ public sealed class TransferApiClient
         if (!response.IsSuccessStatusCode)
         {
             var message = (int)response.StatusCode >= 500
-                ? "A required service is unavailable or returned an error. Check the API and Agent services."
+                ? "The application returned an error. Check the host application logs."
                 : $"{operation} (HTTP {(int)response.StatusCode}).";
             var mediaType = response.Content.Headers.ContentType?.MediaType;
             if ((int)response.StatusCode < 500 || response.StatusCode is System.Net.HttpStatusCode.ServiceUnavailable or System.Net.HttpStatusCode.GatewayTimeout)

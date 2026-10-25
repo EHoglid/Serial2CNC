@@ -4,12 +4,13 @@ using Serial2CNC.Services;
 
 namespace Serial2CNC.Agent;
 
-public sealed class TransferSessionService
+public sealed class TransferSessionService : IAsyncDisposable
 {
     private readonly object _sync = new();
     private readonly IHubContext<TransferHub> _hubContext;
     private CancellationTokenSource? _cts;
     private Task? _runningTask;
+    private bool _isRunning;
     private DateTimeOffset? _startedAt;
     private string _lastStatus = "Idle";
 
@@ -23,7 +24,7 @@ public sealed class TransferSessionService
         lock (_sync)
         {
             return new TransferStateDto(
-                IsRunning: _runningTask is { IsCompleted: false },
+                IsRunning: _isRunning,
                 StartedAt: _startedAt,
                 LastStatus: _lastStatus);
         }
@@ -33,16 +34,19 @@ public sealed class TransferSessionService
     {
         lock (_sync)
         {
-            if (_runningTask is { IsCompleted: false })
+            if (_isRunning)
             {
                 return false;
             }
 
             _cts?.Dispose();
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            _cts = new CancellationTokenSource();
             _startedAt = DateTimeOffset.UtcNow;
             _lastStatus = "Starting transfer...";
-            _runningTask = RunTransferAsync(request, _cts.Token);
+            _isRunning = true;
+            var token = _cts.Token;
+            _runningTask = Task.Run(() => RunTransferAsync(request, token), CancellationToken.None);
         }
 
         await BroadcastStateAsync();
@@ -53,7 +57,7 @@ public sealed class TransferSessionService
     {
         lock (_sync)
         {
-            if (_runningTask is not { IsCompleted: false } || _cts is null)
+            if (!_isRunning || _cts is null)
             {
                 return false;
             }
@@ -108,6 +112,7 @@ public sealed class TransferSessionService
                 _cts?.Dispose();
                 _cts = null;
                 _startedAt = null;
+                _isRunning = false;
             }
 
             await BroadcastStateAsync();
@@ -127,6 +132,20 @@ public sealed class TransferSessionService
     private Task BroadcastStateAsync()
     {
         return _hubContext.Clients.All.SendAsync("state", GetState(), CancellationToken.None);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Task? running;
+        lock (_sync)
+        {
+            _cts?.Cancel();
+            running = _runningTask;
+        }
+        if (running is not null)
+        {
+            await running;
+        }
     }
 }
 

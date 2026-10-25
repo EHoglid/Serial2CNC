@@ -6,6 +6,9 @@ namespace Serial2CNC.Services;
 
 public sealed class CncTransferEngine
 {
+    // The OSP needs time to create the file (or prompt for overwrite and raise XOFF) after the header.
+    public const int OspHeaderDelayMs = 500;
+
     public async Task SendAsync(
         ILineTransport transport,
         TransferOptions transfer,
@@ -44,9 +47,13 @@ public sealed class CncTransferEngine
                 Line = line
             });
 
-            if (transfer.SendDelayMs > 0 && i < payloadLines.Count - 1)
+            var delayMs = transfer.UseOsp7000lFraming && i == 0
+                ? Math.Max(OspHeaderDelayMs, transfer.SendDelayMs)
+                : transfer.SendDelayMs;
+
+            if (delayMs > 0 && i < payloadLines.Count - 1)
             {
-                await Task.Delay(transfer.SendDelayMs, cancellationToken);
+                await Task.Delay(delayMs, cancellationToken);
             }
         }
 

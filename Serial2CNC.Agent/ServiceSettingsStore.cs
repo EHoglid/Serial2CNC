@@ -13,9 +13,11 @@ public sealed class ServiceSettingsStore
     private readonly SemaphoreSlim _sync = new(1, 1);
     private readonly string _settingsFilePath;
     private ServiceSettingsDto _settings;
+    private readonly ILogger<ServiceSettingsStore> _logger;
 
-    public ServiceSettingsStore(string dataDirectory)
+    public ServiceSettingsStore(string dataDirectory, ILogger<ServiceSettingsStore> logger)
     {
+        _logger = logger;
         _settingsFilePath = Path.Combine(dataDirectory, "service-settings.json");
         _settings = LoadFromDiskOrDefault();
     }
@@ -35,9 +37,9 @@ public sealed class ServiceSettingsStore
             var directory = Path.GetDirectoryName(_settingsFilePath)!;
             Directory.CreateDirectory(directory);
 
-            await using var stream = File.Create(_settingsFilePath);
-            await JsonSerializer.SerializeAsync(stream, normalized, JsonOptions, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
+            var temporaryPath = _settingsFilePath + ".tmp";
+            await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(normalized, JsonOptions), cancellationToken);
+            File.Move(temporaryPath, _settingsFilePath, overwrite: true);
             _settings = normalized;
 
             return _settings;
@@ -62,7 +64,7 @@ public sealed class ServiceSettingsStore
 
             if (loaded is null)
             {
-                return CreateDefault();
+                throw new JsonException("The settings file is empty.");
             }
 
             return Normalize(new UpdateServiceSettingsRequest
@@ -82,9 +84,10 @@ public sealed class ServiceSettingsStore
                 UseOsp7000lFraming = loaded.UseOsp7000lFraming
             });
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return CreateDefault();
+            _logger.LogError(ex, "Unable to load settings from {SettingsFile}.", _settingsFilePath);
+            throw;
         }
     }
 

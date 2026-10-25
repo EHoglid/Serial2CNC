@@ -12,6 +12,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Serial2CNC.Core\Serial2CNC.Core.csproj" />
+    <ProjectReference Include="..\Serial2CNC.Web\Serial2CNC.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,5 +27,18 @@
   <ItemGroup>
     <Resource Include="Assets\Serial2CNC.ico" />
   </ItemGroup>
+
+  <Target Name="PublishEmbeddedWebAssets" AfterTargets="Publish">
+    <PropertyGroup>
+      <_EmbeddedWebPublishDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(IntermediateOutputPath)EmbeddedWebPublish\'))</_EmbeddedWebPublishDir>
+    </PropertyGroup>
+    <MSBuild Projects="..\Serial2CNC.Web\Serial2CNC.Web.csproj" Targets="Publish"
+             Properties="Configuration=$(Configuration);TargetFramework=net10.0;PublishDir=$(_EmbeddedWebPublishDir)" />
+    <ItemGroup>
+      <_EmbeddedWebAsset Include="$(_EmbeddedWebPublishDir)wwwroot\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_EmbeddedWebAsset)"
+          DestinationFiles="@(_EmbeddedWebAsset->'$(PublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
 
 </Project>

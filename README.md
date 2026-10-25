@@ -1,240 +1,196 @@
 # Serial2CNC
 
-Serial2CNC is a .NET 10 solution for sending CNC program files over TCP or Serial.
+Send CNC program files using .NET 10, with USR-W610 TCP/IP support and optional
+Okuma OSP7000L framing.
 
-Built-in support includes:
+## Applications
 
-- **USR-W610** serial-to-Wi-Fi/Ethernet converter for TCP workflows
-- **Okuma OSP7000L framing** option for CNC program transfers
+- **Windows desktop:** TCP/IP and serial/COM transfers, with an optional built-in
+  Blazor web application.
+- **Docker server:** one application/container containing the Blazor UI, HTTP
+  endpoints, live transfer events and transfer engine. **TCP/IP only**; no serial
+  devices, API gateway or Windows services are needed.
+- **CLI:** local TCP/IP and serial transfers.
 
-## Projects
+The shared transfer runtime lives in [Serial2CNC.Agent](Serial2CNC.Agent); it is a
+library, not a separately installed or running service.
 
-- `Serial2CNC` - WPF desktop app
-- `Serial2CNC.Web` - Blazor remote UI
-- `Serial2CNC.Api` - API gateway and live log hub
-- `Serial2CNC.Agent` - transfer runtime service
-- `Serial2CNC.Core` - shared models and transfer engine
-- `Serial2CNC.Cli` - command-line entrypoint
+## Windows desktop installation
 
-## Architecture
+1. Download `Serial2CNC-<version>-win-x64.exe` and its SHA-256 checksum from
+   [GitHub Releases](https://github.com/EHoglid/Serial2CNC/releases/latest).
+   Unreleased builds are available as artifacts from the **Windows EXE** workflow.
+2. Verify the download with `Get-FileHash` and run the EXE installer.
+3. Start **Serial2CNC** from the Start menu. Select a file and configure TCP/IP or
+   serial settings.
 
-`Blazor UI -> API -> Agent -> CNC`
+The installer is self-contained and installs for the current user; administrator
+rights and a separately installed .NET runtime are not required. It creates an
+uninstaller and offers a desktop shortcut. No MSI or Windows services are installed.
+Installers are currently unsigned; install only trusted builds.
 
-## Network access
+### Persistent desktop settings
 
-The Web UI is available on HTTPS port **62899**. API (62901) and Agent (62904)
-remain on loopback. The Web UI has no login or account management, and internal
-service requests do not use API keys. Use it only on a trusted private network;
-do not expose the Web UI or service ports to the public internet.
+Connection mode, TCP and serial parameters, selected file/program name, line
+delay, framing, theme, and web enable/port settings are saved per user in
+`%LOCALAPPDATA%\Serial2CNC\desktop-settings.json`. They are saved when starting a
+transfer, changing web activation and closing the app, and restored on startup.
+Writes replace the previous file only after the new settings have been written.
+Load/save failures are displayed rather than silently overwriting settings.
+Upgrades and uninstall leave user settings intact.
 
-The Agent accepts transfer files only within the configured program folder,
-applies the extension filter, rejects links/junctions below that folder, and uses
-the saved connection/delay/framing settings. Save settings
-before sending; a request cannot override the configured CNC destination. The
-standalone WPF and CLI applications run locally. Restrict serial-device/network
-access at the OS/firewall level.
+The desktop's **Delay between lines (ms)** setting defaults to `0` (no deliberate
+pause). Each transfer logs the delay it actually uses. A positive value waits
+between CRLF-terminated lines, including framing lines. TCP disables Nagle
+buffering (`TCP_NODELAY`) so small writes are not held waiting for acknowledgments.
+TCP is still a byte stream: packet boundaries, Wireshark's reassembled stream,
+and the converter's serial output do not necessarily correspond to individual
+application writes. To inspect timing, compare timestamps of outbound TCP data
+packets rather than **Follow TCP Stream**. The delay is a minimum application-side
+pause, not a real-time guarantee of packet arrival or CNC processing.
 
-## Features
+With OSP7000L framing enabled, the program header (`$NAME.MIL%`) is always
+followed by a pause of at least 500 ms (or the line delay, if longer). This
+gives the control time to create the file. If the program already exists, the
+control prompts to overwrite and sends XOFF; with XON/XOFF enabled, sending
+stays paused until the operator answers and the control sends XON.
 
-- TCP and Serial transfer modes
-- Remote file browsing (lazy folder loading)
-- Configurable root path and file extension filter (`*.*`, `*.nc`, etc.)
-- Built-in **USR-W610** support flow for TCP mode and virtual COM
-- Built-in **Okuma OSP7000L** framing mode (`${NAME}% ... %`)
-- Live transfer log stream
-- Responsive Web UI with mode-specific connection settings, touch-friendly controls, and a configured-destination summary
-- Transfer state refreshes every three seconds; Cancel is enabled only for a confirmed active transfer. This state does not indicate a persistent CNC connection.
-- Expand **Transfer options** for line delay/framing and **Live log stream** for diagnostic logs. Transfer status updates in a single formatted block, with failures shown in red without a duplicate error summary; Swagger is under **Developer tools**.
-- Folder access denied by the Agent's operating-system account returns HTTP **403 Forbidden**. The GUI identifies the folder you requested, not an internal child folder; technical exception details remain in the Agent logs. Listing a drive root may also fail when checking a restricted child folder; choose an accessible CNC program folder or grant the service account appropriate access.
-- Settings saves validate that the working directory is absolute, exists, and can be browsed before updating the saved configuration. Invalid paths return **400** and permission failures return **403**; rejected saves leave the previous settings unchanged.
-- One shared **Save / Reload** row applies to all settings. Save is enabled only for changes since the last successful load/save; Reload is always available and discards unsaved edits. The TCP/Serial mode toggle selects the transfer mode and is not a persisted setting.
-- The Web UI remains available when the API or Agent is offline and shows a service-connection banner. State checks retry automatically without resending transfer commands or overwriting edits. Start/Cancel require confirmed transfer state; an outage does not mean an existing transfer has stopped. Initial settings loading retries after recovery.
-- An unreachable Agent returns **503**, or **504** after an eight-second timeout. Web-to-API requests time out after twelve seconds. Live-log connection status is shown separately and reconnects automatically; an API log connection does not confirm an Agent event connection.
-- Docker Compose support for full stack startup
+### Built-in web application
 
-Reference:
+1. Open **Settings** in the desktop application.
+2. Choose a free port (default **62899**) and enable **built-in web application
+   (LAN)**. Click **Open web app** or browse to
+   `http://<desktop-computer-name>:62899` from the local network.
+3. In the browser's settings, select an accessible program folder on the desktop
+   computer, allowed file extensions and the TCP/IP or serial destination.
+   These web transfer settings are saved separately in
+   `%LOCALAPPDATA%\Serial2CNC\Web\service-settings.json`.
 
-- USR-W610: https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html
+The web host runs **inside the desktop process**, not as a child service. Closing
+the desktop app or disabling web hosting stops it and cancels web transfers.
+Its previous activation state is restored next time the desktop starts. Disable
+hosting before changing the port. Desktop and web transfers share a process-wide
+transfer guard so they cannot send simultaneously; each interface reports its own
+transfer's status.
 
-## Run on Windows without Visual Studio
+Allow inbound access to the chosen port only on **private/local-subnet** Windows
+Firewall profiles if remote access is required. The app does not change firewall
+rules automatically.
 
-### Prerequisites
+## Docker server
 
-- Windows 10/11 or Windows Server
-- .NET 10 SDK only if building from source (Visual Studio is not required)
-- Administrator access to install Windows services or run an MSI
-- A CNC program folder that the service account can read/write
-
-The simplest install path is an MSI that installs the Agent, API, and Web as Windows services. If you need a custom service account, use the manual service steps below instead.
-
-The commands below publish self-contained Windows x64 applications, so the CNC computer does not need the .NET runtime installed.
-
-### Basic install: MSI package
-
-1. Download `Serial2CNC-<version>-win-x64.msi` from [GitHub Releases](https://github.com/EHoglid/Serial2CNC/releases/latest), once a version has been released.
-2. Run the MSI and approve the administrator prompt. It registers the three services for automatic startup.
-3. Run the bundled service setup in **elevated PowerShell** (Windows PowerShell 5.1 or PowerShell 7):
-
-   ```powershell
-   & "$env:ProgramFiles\Serial2CNC\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'
-   ```
-
-   The program folder must already exist. Setup configures service access,
-   provisions the Web HTTPS certificate and starts the services. Trust the
-   exported public certificate on client computers, then open
-   `https://<CNC-computer-name>:62899` and configure the program folder and
-   TCP/Serial connection in **Settings**.
-
-No build tools or .NET runtime are required on the CNC computer. This is a service installation, not a tray/taskbar application; the UI runs in your browser.
-
-Before the first release, or for an unreleased build, open **Actions > Windows MSI**, select a successful run, and download its `Serial2CNC-<version>-win-x64` artifact. Unzip it to obtain the MSI and SHA-256 checksum. Artifacts require GitHub sign-in and expire after the repository's artifact retention period.
-
-The MSI is currently unsigned; Windows may show an unknown-publisher warning. Only install packages from a trusted repository/run. Compare `Get-FileHash .\Serial2CNC-<version>-win-x64.msi -Algorithm SHA256` with the accompanying `.sha256` file to check download integrity.
-
-The installer uses separate least-privilege virtual accounts
-(`NT SERVICE\Serial2CNC.Agent`, `.Api`, `.Web`), not `LocalSystem`. Setup grants only
-the Agent access to the specified program folder and opens only Web HTTPS to
-`LocalSubnet` in Windows Firewall. Review other existing firewall rules yourself.
-Do not run manual installation and MSI installation side by side.
-
-Setup creates per-service configuration under
-`%ProgramData%\Serial2CNC\Agent`, `Api`, and `Web`. Each directory is accessible only
-to its service identity, SYSTEM and administrators. Do not copy the Web private
-certificate into source control or distribute it to clients.
-
-By default setup creates a two-year self-signed certificate for the computer name
-and `localhost`. The **public-only** export is
-`%ProgramData%\Serial2CNC\Serial2CNC-Web.cer`. Verify the thumbprint displayed by
-setup out of band before importing this certificate into client trust stores.
-Setup does not silently install global certificate trust. Use the computer name,
-not its IP address, unless your certificate explicitly covers that IP.
-
-To use an existing exportable certificate in `Cert:\LocalMachine\My`, supply
-`-CertificateThumbprint <thumbprint>`; it must have a private key and the required
-DNS names. The private PFX and its random password stay in the protected Web
-directory. Renew certificates before expiry and rerun setup with the replacement
-thumbprint. Never disable certificate validation in clients.
-
-Setup is rerunnable. For upgrades, install a higher MSI version and rerun setup
-to reapply ACLs/firewall and start services.
-
-To uninstall an MSI installation, use **Settings > Apps > Installed apps > Serial2CNC > Uninstall**. Do not delete its services manually. Increase the version for each release. Protected ProgramData settings, exported certificates and the setup firewall rule are retained; remove them deliberately after deciding whether they are needed for recovery. Existing LocalSystem Agent settings are copied to the new Agent data directory on first setup when available; other custom-account installations must migrate their old `%APPDATA%\Serial2CNC\service-settings.json` explicitly.
-
-### Build the MSI yourself
-
-On Windows with the .NET 10 SDK, clone the repository and run:
+Install Docker with Compose. Choose an existing folder on your computer and set
+`CNC_PROGRAMS_DIRECTORY` before starting Compose:
 
 ```powershell
-git clone https://github.com/EHoglid/Serial2CNC.git
-Set-Location .\Serial2CNC
-.\build-msi.ps1 -Version 1.0.0
+$env:CNC_PROGRAMS_DIRECTORY = 'C:\CNCPrograms'
+docker compose up --build -d
 ```
 
-The script publishes self-contained applications, including configuration and Web static assets, then builds the [WiX installer](./Serial2CNC.Installer/Product.wxs). WiX is restored automatically from NuGet; no Visual Studio or global WiX installation is needed. The result is `artifacts\installer\Serial2CNC-1.0.0-win-x64.msi` with a `.sha256` checksum.
+For a persistent configuration, create a `.env` file next to
+[docker-compose.yml](docker-compose.yml) containing:
 
-### Publish the applications
+```dotenv
+CNC_PROGRAMS_DIRECTORY='C:\CNCPrograms'
+```
 
-Clone the repository, then open PowerShell in its root folder:
+Single quotes preserve Windows backslashes and support paths containing spaces.
+The `.env` file is ignored by Git. A PowerShell environment variable overrides
+the `.env` value; remove it with `Remove-Item Env:CNC_PROGRAMS_DIRECTORY` when
+switching to the file.
+
+If no host folder is configured, Compose uses the local `programs` directory:
 
 ```powershell
-git clone https://github.com/EHoglid/Serial2CNC.git
-Set-Location .\Serial2CNC
+New-Item -ItemType Directory -Force programs
+docker compose up --build -d
 ```
 
-Run the following in an elevated PowerShell window to publish directly into `C:\Program Files\Serial2CNC`:
+Open **http://localhost:62899**, expand Settings, set the working directory to
+**`/programs`**, then configure the CNC TCP host/port and save. The UI does not
+show serial controls and the server rejects serial transfer requests. For example,
+`C:\CNCPrograms\Parts` on your computer is `/programs/Parts` in the app. Do not
+enter the Windows host path as the app's working directory.
+Selected transfer files are shown and submitted relative to that directory:
+for example, `Parts/program.nc`, not `/programs/Parts/program.nc`. When entering
+a file path manually, use the same relative format without `..` components.
+
+The host folder must already exist; Compose reports an error rather than creating
+an empty folder for a mistyped path. After changing the host folder, run
+`docker compose up -d` again to recreate the container with the updated mount.
+
+The program mount is read-only; settings are persisted in the named `settings`
+volume at `/data/service-settings.json`. Recreating/upgrading the container keeps
+settings; `docker compose down -v` deliberately removes the settings volume.
+The CNC destination must be reachable from the container (not `localhost`, which
+refers to the container itself). No serial-device mounts are needed.
 
 ```powershell
-$installRoot = Join-Path $env:ProgramFiles 'Serial2CNC'
-
-dotnet publish .\Serial2CNC.Agent\Serial2CNC.Agent.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Agent"
-dotnet publish .\Serial2CNC.Api\Serial2CNC.Api.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Api"
-dotnet publish .\Serial2CNC.Web\Serial2CNC.Web.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true -o "$installRoot\Web"
+docker compose logs -f web
+docker compose down
 ```
 
-You can also publish on a build computer and copy the three output folders to the same paths on the CNC computer. The publish computer needs the .NET 10 SDK; the CNC computer does not need Visual Studio or the .NET runtime.
-
-### Advanced: install and start as Windows services manually
-
-After publishing, register the same virtual accounts used by the MSI. Run in
-elevated PowerShell (do not run this if the MSI services already exist):
+For development with file watching:
 
 ```powershell
-$installRoot = Join-Path $env:ProgramFiles 'Serial2CNC'
-foreach ($component in 'Agent', 'Api', 'Web') {
-    $name = "Serial2CNC.$component"
-    $exe = Join-Path $installRoot "$component\$name.exe"
-    sc.exe create $name binPath= "`"$exe`"" start= auto obj= "NT SERVICE\$name"
-    if ($LASTEXITCODE -ne 0) { throw "Could not register $name." }
-}
-sc.exe config Serial2CNC.Api depend= Serial2CNC.Agent
-if ($LASTEXITCODE -ne 0) { throw 'Could not configure API dependency.' }
-sc.exe config Serial2CNC.Web depend= Serial2CNC.Api
-if ($LASTEXITCODE -ne 0) { throw 'Could not configure Web dependency.' }
-Copy-Item .\setup-services.ps1 $installRoot
-& "$installRoot\setup-services.ps1" -WorkingDirectory 'C:\CNCPrograms'
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up --build
 ```
 
-Open `https://<CNC-computer-name>:62899` after trusting the public certificate.
-The Agent stores settings in
-`%ProgramData%\Serial2CNC\Agent\service-settings.json`. For network shares, arrange
-an appropriate domain identity and matching directory/share permissions; the
-bundled setup provisions the MSI virtual accounts only.
+## Network safety
 
-Useful service commands (run in elevated PowerShell):
+There is **no login or user authentication**. Anyone who can reach the web port
+can browse configured files, change settings and start/cancel CNC transfers.
+HTTP is unencrypted. Use only on a trusted private network; never expose this
+port directly to the public internet. Use an authenticated HTTPS reverse proxy
+or VPN when access outside that network is required.
+
+Remote transfers use the **saved** CNC destination, flow control, delay and
+framing settings. Program selection is restricted to the configured directory
+and extension filter; parent traversal, links and junctions below the directory
+are rejected. The host runs with the permissions of the desktop user or container
+account. Only grant it access to the necessary program folders and CNC network.
+
+Settings saves verify that the folder is absolute, exists and is browsable.
+Invalid folders return HTTP 400 and access-denied errors return HTTP 403 without
+replacing previously saved settings. Transfer state refreshes every three
+seconds; live events reconnect automatically. No transfer commands are retried
+automatically.
+
+## Building
+
+Install the .NET 10 SDK:
 
 ```powershell
-Get-Service 'Serial2CNC.*'
-Restart-Service 'Serial2CNC.Web'
-Stop-Service 'Serial2CNC.Web', 'Serial2CNC.Api', 'Serial2CNC.Agent'
+dotnet build Serial2CNC.slnx -c Release
+dotnet run --project Serial2CNC\Serial2CNC.csproj
+dotnet run --project Serial2CNC.Web\Serial2CNC.Web.csproj --no-launch-profile
+dotnet run --project Serial2CNC.Cli\Serial2CNC.Cli.csproj -- --help
+dotnet test Serial2CNC.Tests\Serial2CNC.Tests.csproj
 ```
 
-To uninstall, stop the services and run `sc.exe delete Serial2CNC.Web`, `sc.exe delete Serial2CNC.Api`, and `sc.exe delete Serial2CNC.Agent`. Remove the published application folders only after confirming that you no longer need them.
+The standalone web application listens on HTTP port 8080 by default. Configure
+`DataDirectory` for persistent settings and `ASPNETCORE_URLS` to change the listener.
+The cross-platform solution filter excludes WPF.
 
-If you want a tray icon or a single interactive EXE that appears in the taskbar and starts at Windows logon, that would be a separate UI mode. The current app is structured as services plus a browser-based UI, so the MSI route is the smallest basic-install option.
-
-### Optional WPF desktop app
-
-The WPF application is separate from the Web/API/Agent services. It can be published from the command line as a Windows desktop app:
+To build the Windows EXE installer, install **Inno Setup 6**, then run:
 
 ```powershell
-dotnet publish .\Serial2CNC\Serial2CNC.csproj -c Release -r win-x64 --self-contained true -p:UseAppHost=true
+.\build-installer.ps1 -Version 1.0.0
 ```
 
-## Run with Docker Compose
+Use `-IsccPath` if the Inno Setup compiler is installed elsewhere. The script
+publishes the self-contained desktop app, including the embedded web application
+and static assets, then produces the EXE and checksum in `artifacts\installer`.
+The **Windows EXE** workflow builds and verifies installation/uninstallation;
+pushing a `v<major>.<minor>.<patch>` tag publishes those assets to a GitHub Release.
 
-Docker Compose starts the stack without account provisioning or API keys. It
-uses HTTP on the private Compose network and publishes only the Web UI port.
-Keep the Compose network private and do not publish Agent/API ports externally.
+### Migrating older installations
 
-## GitHub Actions
+Uninstall the previous MSI using Windows **Installed apps** before using the
+desktop installer or Docker deployment. The new installer does not stop/delete
+existing services, migrate protected ProgramData settings/certificates, or remove
+old firewall rules. Review those resources explicitly and reconfigure the desired
+destination and program folder in the new application's settings. Do not run old
+and new transfer applications against the same CNC device at the same time.
 
-- **Build and Test** workflow for push/PR on `main` and manual runs:
-  - Windows and Linux jobs restore, build, and run tests for Core, Agent, API, Web, and CLI using [Serial2CNC.CrossPlatform.slnf](./Serial2CNC.CrossPlatform.slnf), excluding the Windows-only WPF app
-  - A separate Windows job restores, builds, and runs tests for the WPF desktop project
-  - Hardware-dependent serial/TCP transfers are not exercised by these jobs.
-- **Windows MSI** workflow builds on Windows for pushes/PRs on `main`, version tags, and manual runs; it verifies service installation, local endpoints/static assets, and uninstallation before uploading the MSI artifact
-- **Docker Compose Validate** workflow for compose syntax checks
-- **GitHub Pages** workflow to publish static project info page from `docs/`
-- **Automatic Dependency Submission (NuGet)** can restore the WPF project on Linux because it enables `EnableWindowsTargeting`. This allows dependency analysis on non-Windows runners; the desktop app still requires Windows to run.
-- Project files live in their respective project folders. Do not add an empty root-level `Serial2CNC.csproj`: automatic dependency submission discovers every `.csproj` file and fails when restoring an invalid one.
-
-### Publish a downloadable installer
-
-After these changes are merged into `main`, use **Actions > Windows MSI > Run workflow** to build an artifact without creating a release. The manual version defaults to `1.0.0`.
-
-To create a GitHub Release with the MSI and checksum attached, push a version tag on the commit you want to release:
-
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Use strictly `v<major>.<minor>.<patch>` tags, with major/minor at most 255 and patch at most 65535 (Windows Installer limits). Prerelease suffixes are not supported. Increase the version for subsequent releases and keep the installer UpgradeCode unchanged. Releases are only published after the Windows build and installer smoke test succeed. Re-running a successful tag workflow updates its existing release assets.
-
-The workflow uses GitHub's built-in token; no personal access token is needed. Repository/organization Actions policy must permit the release job's `contents: write` permission.
-
-## GitHub Pages
-
-Project page is published from `docs/` by the `github-pages.yml` workflow.
-
-After first successful deployment, enable Pages in repository settings if needed.
+Reference: [USR-W610 product page](https://www.pusr.com/products/rs232-rs485-to-wifi-converters-usr-w610.html).

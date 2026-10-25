@@ -1,0 +1,9 @@
+**/bin
+**/obj
+.git
+.vs
+.vscode
+artifacts
+TestResults
+programs
+data

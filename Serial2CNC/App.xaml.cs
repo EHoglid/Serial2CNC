@@ -5,13 +5,6 @@ using Microsoft.Win32;
 
 namespace Serial2CNC
 {
-    public enum ThemePreference
-    {
-        System,
-        Light,
-        Dark
-    }
-
     /// <summary>
     /// Interaction logic for App.xaml
     /// </summary>

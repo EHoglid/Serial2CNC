@@ -4,6 +4,7 @@ namespace Serial2CNC.Services;
 
 public sealed class TransferRunner
 {
+    private static readonly SemaphoreSlim TransferGate = new(1, 1);
     private readonly CncTransferEngine _engine = new();
 
     public async Task RunAsync(
@@ -12,13 +13,24 @@ public sealed class TransferRunner
         Action<string>? status,
         CancellationToken cancellationToken)
     {
-        await using ILineTransport transport = request.Mode switch
+        if (!await TransferGate.WaitAsync(0, cancellationToken))
         {
-            ConnectionMode.Tcp => new TcpLineTransport(request.Tcp, status),
-            ConnectionMode.Serial => new SerialLineTransport(request.Serial, status),
-            _ => throw new InvalidOperationException("Unsupported mode.")
-        };
+            throw new InvalidOperationException("A transfer is already running in this application.");
+        }
+        try
+        {
+            await using ILineTransport transport = request.Mode switch
+            {
+                ConnectionMode.Tcp => new TcpLineTransport(request.Tcp, status),
+                ConnectionMode.Serial => new SerialLineTransport(request.Serial, status),
+                _ => throw new InvalidOperationException("Unsupported mode.")
+            };
 
-        await _engine.SendAsync(transport, request.Transfer, report, cancellationToken);
+            await _engine.SendAsync(transport, request.Transfer, report, cancellationToken);
+        }
+        finally
+        {
+            TransferGate.Release();
+        }
     }
 }

@@ -4,7 +4,7 @@ using Serial2CNC.Logging;
 
 namespace Serial2CNC.Agent.Middleware;
 
-internal sealed class FileAccessExceptionHandler(ILogger<FileAccessExceptionHandler> logger) : IExceptionHandler
+public sealed class FileAccessExceptionHandler(ILogger<FileAccessExceptionHandler> logger) : IExceptionHandler
 {
     internal static readonly object RequestedPathKey = new();
 
@@ -24,7 +24,7 @@ internal sealed class FileAccessExceptionHandler(ILogger<FileAccessExceptionHand
         var requestedPath = httpContext.Items[RequestedPathKey] as string;
         var detail = string.IsNullOrWhiteSpace(requestedPath)
             ? "Access to the requested path is denied."
-            : $"The folder '{requestedPath}' cannot be used because access is restricted. Choose another folder or check the Agent account's permissions.";
+            : $"The folder '{requestedPath}' cannot be used because access is restricted. Choose another folder or check the host account's permissions.";
 
         httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
         await httpContext.Response.WriteAsJsonAsync(new ProblemDetails

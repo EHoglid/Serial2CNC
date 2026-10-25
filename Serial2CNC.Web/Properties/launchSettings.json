@@ -4,11 +4,9 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "Api__BaseUrl": "https://localhost:62901",
-        "Api__PublicBaseUrl": "https://localhost:62901"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "applicationUrl": "https://localhost:62899;http://localhost:62903"
+      "applicationUrl": "http://localhost:62899"
     },
     "Docker Compose (Debug)": {
       "commandName": "Executable",
@@ -16,7 +14,7 @@
       "workingDirectory": "..\\..",
       "commandLineArgs": "compose -f docker-compose.yml -f docker-compose.debug.yml up --build",
       "launchBrowser": true,
-      "launchUrl": "http://localhost:62903"
+      "launchUrl": "http://localhost:62899"
     }
   }
 }

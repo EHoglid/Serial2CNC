@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="..\Serial2CNC.Web\Serial2CNC.Web.csproj" />
+    <Compile Include="..\Serial2CNC\Presentation\DesktopSettings.cs" Link="DesktopSettings.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\TransferFormValues.cs" Link="TransferFormValues.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\TransferRequestFactory.cs" Link="TransferRequestFactory.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\TransferExecutionService.cs" Link="TransferExecutionService.cs" />
+    <Compile Include="..\Serial2CNC\ThemePreference.cs" Link="ThemePreference.cs" />
+  </ItemGroup>
+</Project>

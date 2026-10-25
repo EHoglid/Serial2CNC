@@ -1,15 +1,7 @@
 [
   {
-	"Name": "Serial2CNC Full Stack",
+	"Name": "Serial2CNC Docker Application",
 	"Projects": [
-	  {
-		"Path": "Serial2CNC.Agent\\Serial2CNC.Agent.csproj",
-		"Action": "Start"
-	  },
-	  {
-		"Path": "Serial2CNC.Api\\Serial2CNC.Api.csproj",
-		"Action": "Start"
-	  },
 	  {
 		"Path": "Serial2CNC.Web\\Serial2CNC.Web.csproj",
 		"Action": "Start"

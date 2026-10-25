@@ -27,7 +27,7 @@ public sealed class TcpLineTransport : ILineTransport
 
     public async Task OpenAsync(CancellationToken cancellationToken)
     {
-        _client = new TcpClient();
+        _client = new TcpClient { NoDelay = true };
         await _client.ConnectAsync(_options.Host, _options.Port, cancellationToken);
 
         _stream = _client.GetStream();

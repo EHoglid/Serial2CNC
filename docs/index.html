@@ -16,7 +16,7 @@
 <body>
   <div class="wrap">
     <h1>Serial2CNC</h1>
-    <p>Send CNC files over TCP or Serial using a Windows desktop app or a Blazor UI backed by API and Agent services.</p>
+    <p>Send CNC files using the Windows desktop application (TCP/IP or serial), or a single Docker application (TCP/IP only).</p>
 
     <div class="card">
       <h2>Built-in CNC/Device Support</h2>
@@ -30,22 +30,22 @@
     <div class="card">
       <h2>Windows setup</h2>
       <ol>
-        <li>Download the Windows x64 MSI from <a href="https://github.com/EHoglid/Serial2CNC/releases/latest">GitHub Releases</a>, once a version is released.</li>
-        <li>Run the MSI and approve the administrator prompt. It installs the Agent, API, and Web as automatic Windows services, running even when nobody is logged on.</li>
-        <li>Open <code>http://127.0.0.1:62899</code>, configure the working directory and TCP/Serial settings, then select a file and start the transfer.</li>
+        <li>Download the Windows x64 EXE installer from <a href="https://github.com/EHoglid/Serial2CNC/releases/latest">GitHub Releases</a>, once a version is released.</li>
+        <li>Run the installer and launch Serial2CNC from the Start menu. No Windows services or separate .NET runtime are required.</li>
+        <li>Configure TCP/IP or serial settings and select a file. Desktop settings are preserved per user across restarts and upgrades.</li>
+        <li>Optionally enable the built-in LAN web application in Settings and open <code>http://localhost:62899</code>. It supports TCP/IP and serial while the desktop app is running.</li>
       </ol>
-      <p>For unreleased builds, download and unzip an installer artifact from a successful <a href="https://github.com/EHoglid/Serial2CNC/actions/workflows/build-msi.yml">Windows MSI workflow</a> run (GitHub sign-in required). Installers are currently unsigned; only install trusted builds.</p>
-      <p>See the <a href="https://github.com/EHoglid/Serial2CNC#run-on-windows-without-visual-studio">README setup guide</a> for checksum verification, building an MSI yourself, release instructions, and manual service-account installation.</p>
-      <p><strong>Network safety:</strong> the MSI services use the highly privileged LocalSystem account and listen only on loopback. The application does not provide user authentication; keep it on a trusted computer and do not expose it directly to an untrusted network.</p>
+      <p>For unreleased builds, download an installer artifact from the <a href="https://github.com/EHoglid/Serial2CNC/actions/workflows/build-installer.yml">Windows EXE workflow</a> (GitHub sign-in required). Installers are currently unsigned; only install trusted builds.</p>
+      <p>See the <a href="https://github.com/EHoglid/Serial2CNC#readme">README setup guide</a> for checksum verification, Docker deployment, installer builds and migration from older MSI installations.</p>
+      <p><strong>Network safety:</strong> the web application uses HTTP and has no user authentication. Use a trusted private LAN only; do not expose it directly to the internet.</p>
     </div>
 
     <div class="card">
       <h2>Components</h2>
       <ul>
         <li>WPF Desktop: <code>Serial2CNC</code></li>
-        <li>Blazor UI: <code>Serial2CNC.Web</code></li>
-        <li>API Gateway: <code>Serial2CNC.Api</code></li>
-        <li>Transfer Agent: <code>Serial2CNC.Agent</code></li>
+        <li>Single Docker server and embedded Blazor UI: <code>Serial2CNC.Web</code></li>
+        <li>Shared transfer runtime library: <code>Serial2CNC.Agent</code></li>
       </ul>
     </div>
 

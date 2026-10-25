@@ -1,13 +1,11 @@
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.SignalR;
+using Serial2CNC.Models;
 
 namespace Serial2CNC.Web;
 
 public sealed class LiveLogStreamClient : IAsyncDisposable
 {
-    private readonly IConfiguration _configuration;
-    private readonly NavigationManager _navigationManager;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<LiveLogStreamClient> _logger;
     private HubConnection? _connection;
     private bool _initialized;
@@ -19,10 +17,9 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
     public event Action<LiveLogEntry>? LogReceived;
     public bool IsConnected => _connection?.State == HubConnectionState.Connected;
 
-    public LiveLogStreamClient(IConfiguration configuration, NavigationManager navigationManager, ILogger<LiveLogStreamClient> logger)
+    public LiveLogStreamClient(IHttpClientFactory httpClientFactory, ILogger<LiveLogStreamClient> logger)
     {
-        _configuration = configuration;
-        _navigationManager = navigationManager;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -39,15 +36,20 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
         }
 
         _initialized = true;
-        var apiBaseUrl = _configuration["Api:BaseUrl"] ?? _navigationManager.BaseUri;
-        var hubUrl = $"{apiBaseUrl.TrimEnd('/')}/hubs/logs";
+        using var client = _httpClientFactory.CreateClient("api");
+        var hubUrl = new Uri(client.BaseAddress
+            ?? throw new InvalidOperationException("The application's HTTP client has no base address."), "/hubs/transfers");
 
         _connection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
             .WithAutomaticReconnect()
             .Build();
 
-        _connection.On<LiveLogEntry>("log", entry => LogReceived?.Invoke(entry));
+        _connection.On<TransferProgress>("progress", progress => Publish("Information", progress.Message));
+        _connection.On<string>("status", status => Publish("Information", status));
+        _connection.On<string>("failed", error => Publish("Error", error));
+        _connection.On("completed", () => Publish("Information", "Transfer complete."));
+        _connection.On("canceled", () => Publish("Warning", "Transfer canceled."));
 
         _connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _connectLoopTask = RunConnectLoopAsync(_connectCts.Token);
@@ -103,8 +105,11 @@ public sealed class LiveLogStreamClient : IAsyncDisposable
         }
 
         _lastUnavailableLogUtc = now;
-        _logger.LogInformation("Live log stream unavailable. Start the API project to enable real-time logs.");
+        _logger.LogWarning("The application's live transfer log stream is unavailable; retrying.");
     }
+
+    private void Publish(string level, string message) =>
+        LogReceived?.Invoke(new LiveLogEntry(DateTimeOffset.UtcNow, "Transfer", level, message));
 
     public async ValueTask DisposeAsync()
     {

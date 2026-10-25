@@ -92,8 +92,24 @@
             </Grid>
         </materialDesign:Card>
 
-        <StackPanel x:Name="AdvancedSettingsPanel" Grid.Row="1" Margin="0,0,0,10" Visibility="Collapsed">
+        <ScrollViewer x:Name="AdvancedSettingsPanel" Grid.Row="1" Margin="0,0,0,10" Visibility="Collapsed"
+                      MaxHeight="300" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
             <TextBlock Text="Connection settings (advanced)" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <materialDesign:Card Margin="0,0,0,10" Padding="12">
+                    <StackPanel>
+                        <WrapPanel>
+                            <CheckBox x:Name="WebEnabledCheckBox" Content="Enable built-in web application (LAN)"
+                                      VerticalAlignment="Center" Checked="WebEnabled_Changed" Unchecked="WebEnabled_Changed" Margin="0,0,16,0" />
+                            <TextBlock Text="Port:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox x:Name="WebPortTextBox" Text="62899" Width="70" Margin="0,0,12,0" />
+                            <Button Content="Open web app" Click="OpenWeb_Click" />
+                        </WrapPanel>
+                        <TextBlock x:Name="WebStatusTextBlock" Text="Web application disabled." Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Trusted LAN only; no login. Configure the web program folder and destination in the browser."
+                                   Opacity="0.72" TextWrapping="Wrap" />
+                    </StackPanel>
+                </materialDesign:Card>
 
                 <materialDesign:Card Margin="0,0,0,10" Padding="12">
                     <Grid>
@@ -240,7 +256,7 @@
                     </Grid>
                 </materialDesign:Card>
         </StackPanel>
-
+        </ScrollViewer>
         <materialDesign:Card Grid.Row="3" Margin="0,0,0,10" Padding="12">
             <Grid>
                 <Grid.ColumnDefinitions>

@@ -4,8 +4,8 @@
 @using System.Text.Json
 @inject TransferApiClient Api
 @inject LiveLogStreamClient LogStream
-@inject IConfiguration Configuration
 @inject ILogger<Home> Logger
+@inject HostCapabilities Capabilities
 @implements IAsyncDisposable
 
 <div class="transfer-page">
@@ -23,11 +23,18 @@
         </div>
 
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;">
+            @if (Capabilities.AllowSerial)
+            {
             <div class="connection-mode">
                 <span>TCP</span>
                 <FluentSwitch Value="@(Mode == ConnectionMode.Serial)" ValueChanged="OnModeChanged" AriaLabel="Connection mode: off for TCP, on for Serial (COM)" />
                 <span>Serial (COM)</span>
             </div>
+            }
+            else
+            {
+                <span>TCP/IP</span>
+            }
 
             <FluentButton Class="settings-toggle" Appearance="ButtonAppearance.Outline" aria-label="Settings" Title="Settings" aria-expanded="@(ShowGeneralSettings && ShowAdvancedSettings ? "true" : "false")" aria-controls="general-settings connection-settings" OnClick="ToggleSettingsPanels">
                 <svg class="settings-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false">
@@ -50,7 +57,7 @@
 
             <div class="settings-grid">
                 <div>
-                    <FluentTextInput Label="Working directory on Agent" Placeholder="D:/project/" @bind-Value="WorkingDirectory" Immediate="true" Style="width:100%;" />
+                    <FluentTextInput Label="Program directory on host" Placeholder="/programs" @bind-Value="WorkingDirectory" Immediate="true" Style="width:100%;" />
                 </div>
                 <div>
                     <FluentTextInput Label="Allowed file extensions" Placeholder="*.* or *.nc" @bind-Value="FileExtensionFilter" Immediate="true" Style="width:100%;" />
@@ -255,8 +262,8 @@
 
         <div class="selected-file">
             <div style="flex:1 1 auto; min-width:0;">
-                <FluentTextInput Label="Selected NC file path"
-                                 Placeholder="Select a file from the list above"
+                <FluentTextInput Label="NC file path relative to working directory"
+                                 Placeholder="Select a file above or enter Parts/program.nc"
                                  @bind-Value="FilePath"
                                  Style="width:100%;" />
             </div>
@@ -298,7 +305,7 @@
                 </div>
             }
         </details>
-        <p class="log-connection" role="status">@(LogStream.IsConnected ? "Live logs connected to API." : "Live logs disconnected - reconnecting automatically.")</p>
+        <p class="log-connection" role="status">@(LogStream.IsConnected ? "Live transfer logs connected." : "Live logs disconnected - reconnecting automatically.")</p>
 
     </FluentCard>
 </div>
@@ -488,7 +495,7 @@
         {
             SettingsHasError = true;
             SettingsErrorTitle = "Settings could not be loaded";
-            SettingsStatusText = "Unable to load settings from API.";
+            SettingsStatusText = "Unable to load application settings.";
             return;
         }
 
@@ -691,26 +698,19 @@
     private void SelectFile(FileTreeNodeDto node)
     {
         SelectedRelativePath = node.RelativePath;
-        FilePath = BuildAbsolutePathFromRelative(node.RelativePath);
+        FilePath = node.RelativePath;
         if (UseOsp7000lFraming)
         {
             ProgramName = $"{Path.GetFileNameWithoutExtension(node.Name)}.MIL".ToUpperInvariant();
         }
     }
 
-    private string BuildAbsolutePathFromRelative(string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(WorkingDirectory))
-        {
-            return relativePath;
-        }
-
-        var normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
-        return Path.Combine(WorkingDirectory, normalized);
-    }
-
     private void RefreshComPorts()
     {
+        if (!Capabilities.AllowSerial)
+        {
+            return;
+        }
         var ports = SerialPort.GetPortNames();
         Array.Sort(ports, StringComparer.OrdinalIgnoreCase);
 
@@ -837,8 +837,8 @@
 
     private static string GetServiceErrorMessage(Exception exception) => exception switch
     {
-        JsonException => "A service returned an invalid response. Check the API and Agent logs.",
-        OperationCanceledException => "The service did not respond in time. Check the API and Agent connection.",
+        JsonException => "The application returned an invalid response. Check the host application logs.",
+        OperationCanceledException => "The application did not respond in time. Check the host application.",
         _ => exception.Message
     };
 

@@ -1,5 +1,8 @@
 ﻿using System.IO;
 using System.IO.Ports;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,6 +12,8 @@ using Microsoft.Win32;
 using Serial2CNC.Models;
 using Serial2CNC.Presentation;
 using Serial2CNC.Services;
+using Serial2CNC.Web;
+using Microsoft.AspNetCore.Builder;
 
 namespace Serial2CNC
 {
@@ -20,6 +25,12 @@ namespace Serial2CNC
         private readonly TransferValidationService _validationService = new();
         private readonly TransferRequestFactory _requestFactory = new();
         private readonly TransferExecutionService _executionService = new();
+        private WebApplication? _webApplication;
+        private Task _webHostingTask = Task.CompletedTask;
+        private Task _activeTransferTask = Task.CompletedTask;
+        private bool _closingAfterShutdown;
+        private bool _shutdownInProgress;
+        private bool _settingsLoaded;
 
         public MainWindow()
         {
@@ -30,6 +41,208 @@ namespace Serial2CNC
             HookValidationClearHandlers();
             ApplyThemeSelectionFromApp();
             LoadAvailableComPorts();
+            Loaded += MainWindow_Loaded;
+            Closing += MainWindow_Closing;
+        }
+
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var settings = DesktopSettings.Load();
+                if (settings.Transfer is { } form)
+                {
+                    TcpModeRadio.IsChecked = form.UseTcp;
+                    SerialModeRadio.IsChecked = !form.UseTcp;
+                    FilePathTextBox.Text = form.FilePath;
+                    ProgramNameTextBox.Text = form.ProgramName;
+                    SendDelayTextBox.Text = form.SendDelay;
+                    TcpIpTextBox.Text = form.TcpHost;
+                    TcpPortTextBox.Text = form.TcpPort;
+                    TcpXonXoffCheckBox.IsChecked = form.TcpUseXonXoff;
+                    ComPortComboBox.Text = form.ComPort;
+                    BaudRateComboBox.Text = form.BaudRate;
+                    DataBitsTextBox.Text = form.DataBits;
+                    ParityComboBox.Text = form.Parity;
+                    StopBitsComboBox.Text = form.StopBits;
+                    HandshakeComboBox.Text = form.Handshake;
+                    UseOspCheckBox.IsChecked = form.UseOsp7000lFraming;
+                }
+                if (Application.Current is App app)
+                {
+                    app.SetThemePreference(settings.Theme);
+                    ApplyThemeSelectionFromApp();
+                }
+                WebPortTextBox.Text = settings.WebPort.ToString();
+                WebEnabledCheckBox.IsChecked = settings.WebEnabled;
+                _settingsLoaded = true;
+                _webHostingTask = ApplyWebHostingAsync();
+                await _webHostingTask;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                MessageBox.Show(this, $"Unable to load settings. The saved file has not been changed.\n{ex.Message}",
+                    "Settings error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveSettings()
+        {
+            if (!_settingsLoaded)
+            {
+                throw new InvalidOperationException("Settings were not loaded. The saved settings will not be overwritten.");
+            }
+            if (!int.TryParse(WebPortTextBox.Text, out var port) || port is < 1 or > 65535)
+            {
+                throw new InvalidOperationException("The web port must be between 1 and 65535.");
+            }
+            new DesktopSettings
+            {
+                Transfer = CaptureFormValues(),
+                Theme = (Application.Current as App)?.CurrentThemePreference ?? ThemePreference.System,
+                WebEnabled = WebEnabledCheckBox.IsChecked == true,
+                WebPort = port
+            }.Save();
+        }
+
+        private async void WebEnabled_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_settingsLoaded || !WebEnabledCheckBox.IsEnabled || _shutdownInProgress)
+            {
+                return;
+            }
+            _webHostingTask = ApplyWebHostingAsync();
+            await _webHostingTask;
+            if (!_shutdownInProgress)
+            {
+                TrySaveSettings();
+            }
+        }
+
+        private async Task ApplyWebHostingAsync()
+        {
+            WebEnabledCheckBox.IsEnabled = false;
+            try
+            {
+                if (WebEnabledCheckBox.IsChecked == true && _webApplication is null)
+                {
+                    if (!int.TryParse(WebPortTextBox.Text, out var port) || port is < 1 or > 65535)
+                    {
+                        throw new InvalidOperationException("The web port must be between 1 and 65535.");
+                    }
+                    var host = WebHostFactory.Create([], Path.Combine(DesktopSettings.DataDirectory, "Web"), port);
+                    try
+                    {
+                        await host.StartAsync();
+                    }
+                    catch
+                    {
+                        await host.DisposeAsync();
+                        throw;
+                    }
+                    _webApplication = host;
+                    WebStatusTextBlock.Text = $"Web app running: http://{Environment.MachineName}:{port} (allow private-network access in Windows Firewall).";
+                }
+                else if (WebEnabledCheckBox.IsChecked != true && _webApplication is not null)
+                {
+                    await _webApplication.StopAsync();
+                    await _webApplication.DisposeAsync();
+                    _webApplication = null;
+                    WebStatusTextBlock.Text = "Web application disabled.";
+                }
+            }
+            catch (Exception ex)
+            {
+                WebEnabledCheckBox.IsChecked = _webApplication is not null;
+                WebStatusTextBlock.Text = $"Web application error: {ex.Message}";
+                AppendLog(WebStatusTextBlock.Text);
+            }
+            finally
+            {
+                WebEnabledCheckBox.IsEnabled = true;
+                WebPortTextBox.IsEnabled = _webApplication is null;
+            }
+        }
+
+        private void OpenWeb_Click(object sender, RoutedEventArgs e)
+        {
+            if (_webApplication is null)
+            {
+                WebStatusTextBlock.Text = "Enable the web application first.";
+                return;
+            }
+            try
+            {
+                Process.Start(new ProcessStartInfo($"http://localhost:{WebPortTextBox.Text}") { UseShellExecute = true });
+            }
+            catch (Win32Exception ex)
+            {
+                WebStatusTextBlock.Text = $"Unable to open browser: {ex.Message}";
+            }
+        }
+
+        private bool TrySaveSettings()
+        {
+            try
+            {
+                SaveSettings();
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                MessageBox.Show(this, $"Unable to save settings.\n{ex.Message}", "Settings error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
+        private async void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (_closingAfterShutdown)
+            {
+                return;
+            }
+            e.Cancel = true;
+            if (_shutdownInProgress)
+            {
+                return;
+            }
+            if (!TrySaveSettings() && MessageBox.Show(this, "Close without saving settings?", "Settings error",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+            _shutdownInProgress = true;
+            IsEnabled = false;
+            _transferCts?.Cancel();
+            try
+            {
+                try
+                {
+                    await _activeTransferTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"Transfer ended with an error during shutdown: {ex.Message}");
+                }
+                await _webHostingTask;
+                if (_webApplication is not null)
+                {
+                    await _webApplication.StopAsync();
+                    await _webApplication.DisposeAsync();
+                    _webApplication = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Unable to stop the web application cleanly.\n{ex.Message}", "Web application error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            _closingAfterShutdown = true;
+            _ = Dispatcher.BeginInvoke(new Action(Close));
         }
 
         private void ApplyThemeSelectionFromApp()
@@ -244,6 +457,10 @@ namespace Serial2CNC
             }
 
             var formValues = CaptureFormValues();
+            if (!TrySaveSettings())
+            {
+                return;
+            }
 
             ClearValidationErrors();
             var validationErrors = _validationService.Validate(formValues);
@@ -274,6 +491,8 @@ namespace Serial2CNC
             StartButton.IsEnabled = false;
             CancelButton.IsEnabled = true;
             LogTextBox.Clear();
+            AppendLog($"Line delay: {request.Transfer.SendDelayMs} ms between lines."
+                + (request.Mode == ConnectionMode.Tcp ? " TCP Nagle buffering disabled." : string.Empty));
             StatusTextBlock.Text = "Starting transfer...";
             TransferProgressBar.Value = 0;
 
@@ -281,11 +500,12 @@ namespace Serial2CNC
 
             try
             {
-                await _executionService.RunAsync(
+                _activeTransferTask = _executionService.RunAsync(
                     request,
                     progress => Dispatcher.Invoke(() => ReportProgress(progress)),
                     status => Dispatcher.Invoke(() => AppendLog(status)),
                     _transferCts.Token);
+                await _activeTransferTask;
 
                 StatusTextBlock.Text = "Transfer complete.";
             }
@@ -301,6 +521,7 @@ namespace Serial2CNC
             }
             finally
             {
+                _activeTransferTask = Task.CompletedTask;
                 _transferCts.Dispose();
                 _transferCts = null;
                 StartButton.IsEnabled = true;
@@ -349,7 +570,7 @@ namespace Serial2CNC
                 ComPortComboBox.Items.Add(port);
             }
 
-            if (!string.IsNullOrWhiteSpace(selected) && ports.Contains(selected, StringComparer.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(selected))
             {
                 ComPortComboBox.Text = selected;
             }
