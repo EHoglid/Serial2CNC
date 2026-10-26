@@ -161,6 +161,7 @@ namespace Serial2CNC
             {
                 WebEnabledCheckBox.IsEnabled = true;
                 WebPortTextBox.IsEnabled = _webApplication is null;
+                OpenWebAppButton.Visibility = _webApplication is not null ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
