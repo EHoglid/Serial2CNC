@@ -5,9 +5,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media;
 using Microsoft.Win32;
 using Serial2CNC.Models;
 using Serial2CNC.Presentation;
@@ -20,8 +18,6 @@ namespace Serial2CNC
     public partial class MainWindow : Window
     {
         private CancellationTokenSource? _transferCts;
-        private readonly Dictionary<Control, ControlValidationState> _validationStateByControl = [];
-        private readonly Dictionary<Control, TextBlock> _errorTextByControl = [];
         private readonly TransferValidationService _validationService = new();
         private readonly TransferRequestFactory _requestFactory = new();
         private readonly TransferExecutionService _executionService = new();
@@ -29,17 +25,22 @@ namespace Serial2CNC
         private Task _webHostingTask = Task.CompletedTask;
         private Task _activeTransferTask = Task.CompletedTask;
         private bool _closingAfterShutdown;
-        private bool _shutdownInProgress;
         private bool _settingsLoaded;
+        private MainWindowViewModel ViewModel { get; }
 
         public MainWindow()
         {
+            ViewModel = new MainWindowViewModel(StartAsync, () => _transferCts?.Cancel(), BrowseFile, LoadAvailableComPorts, OpenWeb);
+            DataContext = ViewModel;
             InitializeComponent();
             SourceInitialized += (_, _) => ApplyTitleBarTheme();
             Loaded += (_, _) => SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
             Closed += (_, _) => SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
-            HookValidationClearHandlers();
-            ApplyThemeSelectionFromApp();
+            ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            if (Application.Current is App app)
+            {
+                ViewModel.Theme = app.CurrentThemePreference;
+            }
             LoadAvailableComPorts();
             Loaded += MainWindow_Loaded;
             Closing += MainWindow_Closing;
@@ -52,29 +53,15 @@ namespace Serial2CNC
                 var settings = DesktopSettings.Load();
                 if (settings.Transfer is { } form)
                 {
-                    TcpModeRadio.IsChecked = form.UseTcp;
-                    SerialModeRadio.IsChecked = !form.UseTcp;
-                    FilePathTextBox.Text = form.FilePath;
-                    ProgramNameTextBox.Text = form.ProgramName;
-                    SendDelayTextBox.Text = form.SendDelay;
-                    TcpIpTextBox.Text = form.TcpHost;
-                    TcpPortTextBox.Text = form.TcpPort;
-                    TcpXonXoffCheckBox.IsChecked = form.TcpUseXonXoff;
-                    ComPortComboBox.Text = form.ComPort;
-                    BaudRateComboBox.Text = form.BaudRate;
-                    DataBitsTextBox.Text = form.DataBits;
-                    ParityComboBox.Text = form.Parity;
-                    StopBitsComboBox.Text = form.StopBits;
-                    HandshakeComboBox.Text = form.Handshake;
-                    UseOspCheckBox.IsChecked = form.UseOsp7000lFraming;
+                    ViewModel.LoadFormValues(form);
                 }
                 if (Application.Current is App app)
                 {
                     app.SetThemePreference(settings.Theme);
-                    ApplyThemeSelectionFromApp();
+                    ViewModel.Theme = settings.Theme;
                 }
-                WebPortTextBox.Text = settings.WebPort.ToString();
-                WebEnabledCheckBox.IsChecked = settings.WebEnabled;
+                ViewModel.WebPort = settings.WebPort.ToString();
+                ViewModel.WebEnabled = settings.WebEnabled;
                 _settingsLoaded = true;
                 _webHostingTask = ApplyWebHostingAsync();
                 await _webHostingTask;
@@ -92,28 +79,41 @@ namespace Serial2CNC
             {
                 throw new InvalidOperationException("Settings were not loaded. The saved settings will not be overwritten.");
             }
-            if (!int.TryParse(WebPortTextBox.Text, out var port) || port is < 1 or > 65535)
+            if (!int.TryParse(ViewModel.WebPort, out var port) || port is < 1 or > 65535)
             {
                 throw new InvalidOperationException("The web port must be between 1 and 65535.");
             }
             new DesktopSettings
             {
-                Transfer = CaptureFormValues(),
-                Theme = (Application.Current as App)?.CurrentThemePreference ?? ThemePreference.System,
-                WebEnabled = WebEnabledCheckBox.IsChecked == true,
+                Transfer = ViewModel.CaptureFormValues(),
+                Theme = ViewModel.Theme,
+                WebEnabled = ViewModel.WebEnabled,
                 WebPort = port
             }.Save();
         }
 
-        private async void WebEnabled_Changed(object sender, RoutedEventArgs e)
+        private async void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (!_settingsLoaded || !WebEnabledCheckBox.IsEnabled || _shutdownInProgress)
+            if (e.PropertyName == nameof(MainWindowViewModel.Theme) && Application.Current is App app)
+            {
+                app.SetThemePreference(ViewModel.Theme);
+            }
+            if (e.PropertyName == nameof(MainWindowViewModel.UseTcp) && ViewModel.UseSerial)
+            {
+                LoadAvailableComPorts();
+            }
+            if (e.PropertyName == nameof(MainWindowViewModel.Log))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(LogTextBox.ScrollToEnd));
+            }
+            if (e.PropertyName != nameof(MainWindowViewModel.WebEnabled)
+                || !_settingsLoaded || ViewModel.IsWebTransitioning || ViewModel.IsShuttingDown)
             {
                 return;
             }
             _webHostingTask = ApplyWebHostingAsync();
             await _webHostingTask;
-            if (!_shutdownInProgress)
+            if (!ViewModel.IsShuttingDown)
             {
                 TrySaveSettings();
             }
@@ -121,12 +121,12 @@ namespace Serial2CNC
 
         private async Task ApplyWebHostingAsync()
         {
-            WebEnabledCheckBox.IsEnabled = false;
+            ViewModel.IsWebTransitioning = true;
             try
             {
-                if (WebEnabledCheckBox.IsChecked == true && _webApplication is null)
+                if (ViewModel.WebEnabled && _webApplication is null)
                 {
-                    if (!int.TryParse(WebPortTextBox.Text, out var port) || port is < 1 or > 65535)
+                    if (!int.TryParse(ViewModel.WebPort, out var port) || port is < 1 or > 65535)
                     {
                         throw new InvalidOperationException("The web port must be between 1 and 65535.");
                     }
@@ -141,44 +141,43 @@ namespace Serial2CNC
                         throw;
                     }
                     _webApplication = host;
-                    WebStatusTextBlock.Text = $"Web app running: http://{Environment.MachineName}:{port} (allow private-network access in Windows Firewall).";
+                    ViewModel.WebStatus = $"Web app running: http://{Environment.MachineName}:{port} (allow private-network access in Windows Firewall).";
                 }
-                else if (WebEnabledCheckBox.IsChecked != true && _webApplication is not null)
+                else if (!ViewModel.WebEnabled && _webApplication is not null)
                 {
                     await _webApplication.StopAsync();
                     await _webApplication.DisposeAsync();
                     _webApplication = null;
-                    WebStatusTextBlock.Text = "Web application disabled.";
+                    ViewModel.WebStatus = "Web application disabled.";
                 }
             }
             catch (Exception ex)
             {
-                WebEnabledCheckBox.IsChecked = _webApplication is not null;
-                WebStatusTextBlock.Text = $"Web application error: {ex.Message}";
-                AppendLog(WebStatusTextBlock.Text);
+                ViewModel.WebEnabled = _webApplication is not null;
+                ViewModel.WebStatus = $"Web application error: {ex.Message}";
+                AppendLog(ViewModel.WebStatus);
             }
             finally
             {
-                WebEnabledCheckBox.IsEnabled = true;
-                WebPortTextBox.IsEnabled = _webApplication is null;
-                OpenWebAppButton.Visibility = _webApplication is not null ? Visibility.Visible : Visibility.Collapsed;
+                ViewModel.IsWebRunning = _webApplication is not null;
+                ViewModel.IsWebTransitioning = false;
             }
         }
 
-        private void OpenWeb_Click(object sender, RoutedEventArgs e)
+        private void OpenWeb()
         {
             if (_webApplication is null)
             {
-                WebStatusTextBlock.Text = "Enable the web application first.";
+                ViewModel.WebStatus = "Enable the web application first.";
                 return;
             }
             try
             {
-                Process.Start(new ProcessStartInfo($"http://localhost:{WebPortTextBox.Text}") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo($"http://localhost:{ViewModel.WebPort}") { UseShellExecute = true });
             }
             catch (Win32Exception ex)
             {
-                WebStatusTextBlock.Text = $"Unable to open browser: {ex.Message}";
+                ViewModel.WebStatus = $"Unable to open browser: {ex.Message}";
             }
         }
 
@@ -204,7 +203,7 @@ namespace Serial2CNC
                 return;
             }
             e.Cancel = true;
-            if (_shutdownInProgress)
+            if (ViewModel.IsShuttingDown)
             {
                 return;
             }
@@ -213,8 +212,7 @@ namespace Serial2CNC
             {
                 return;
             }
-            _shutdownInProgress = true;
-            IsEnabled = false;
+            ViewModel.IsShuttingDown = true;
             _transferCts?.Cancel();
             try
             {
@@ -235,6 +233,7 @@ namespace Serial2CNC
                     await _webApplication.StopAsync();
                     await _webApplication.DisposeAsync();
                     _webApplication = null;
+                    ViewModel.IsWebRunning = false;
                 }
             }
             catch (Exception ex)
@@ -244,86 +243,6 @@ namespace Serial2CNC
             }
             _closingAfterShutdown = true;
             _ = Dispatcher.BeginInvoke(new Action(Close));
-        }
-
-        private void ApplyThemeSelectionFromApp()
-        {
-            if (Application.Current is not App app)
-            {
-                return;
-            }
-
-            SetThemeRadioChecked("ThemeSystemRadio", app.CurrentThemePreference == ThemePreference.System);
-            SetThemeRadioChecked("ThemeLightRadio", app.CurrentThemePreference == ThemePreference.Light);
-            SetThemeRadioChecked("ThemeDarkRadio", app.CurrentThemePreference == ThemePreference.Dark);
-        }
-
-        private void SetThemeRadioChecked(string radioName, bool isChecked)
-        {
-            if (FindName(radioName) is RadioButton radio)
-            {
-                radio.IsChecked = isChecked;
-            }
-        }
-
-        private void HookValidationClearHandlers()
-        {
-            _errorTextByControl[TcpIpTextBox] = TcpIpErrorText;
-            _errorTextByControl[TcpPortTextBox] = TcpPortErrorText;
-            _errorTextByControl[FilePathTextBox] = FilePathErrorText;
-
-            TcpIpTextBox.TextChanged += (_, _) => ClearControlError(TcpIpTextBox);
-            TcpPortTextBox.TextChanged += (_, _) => ClearControlError(TcpPortTextBox);
-            FilePathTextBox.TextChanged += (_, _) => ClearControlError(FilePathTextBox);
-            SendDelayTextBox.TextChanged += (_, _) => ClearControlError(SendDelayTextBox);
-            ComPortComboBox.SelectionChanged += (_, _) => ClearControlError(ComPortComboBox);
-            ComPortComboBox.LostFocus += (_, _) => ClearControlError(ComPortComboBox);
-        }
-
-        private TransferFormValues CaptureFormValues()
-        {
-            return new TransferFormValues
-            {
-                UseTcp = TcpModeRadio.IsChecked == true,
-                FilePath = FilePathTextBox.Text,
-                ProgramName = ProgramNameTextBox.Text,
-                SendDelay = SendDelayTextBox.Text,
-                TcpHost = TcpIpTextBox.Text,
-                TcpPort = TcpPortTextBox.Text,
-                TcpUseXonXoff = TcpXonXoffCheckBox.IsChecked == true,
-                ComPort = ComPortComboBox.Text,
-                BaudRate = BaudRateComboBox.Text,
-                DataBits = DataBitsTextBox.Text,
-                Parity = ParityComboBox.Text,
-                StopBits = StopBitsComboBox.Text,
-                Handshake = HandshakeComboBox.Text,
-                UseOsp7000lFraming = UseOspCheckBox.IsChecked == true
-            };
-        }
-
-        private void MarkValidationErrors(IEnumerable<FormValidationError> errors)
-        {
-            foreach (var error in errors)
-            {
-                switch (error.Field)
-                {
-                    case TransferFormFields.FilePath:
-                        MarkControlError(FilePathTextBox, error.Message);
-                        break;
-                    case TransferFormFields.SendDelay:
-                        MarkControlError(SendDelayTextBox, error.Message);
-                        break;
-                    case TransferFormFields.TcpHost:
-                        MarkControlError(TcpIpTextBox, error.Message);
-                        break;
-                    case TransferFormFields.TcpPort:
-                        MarkControlError(TcpPortTextBox, error.Message);
-                        break;
-                    case TransferFormFields.ComPort:
-                        MarkControlError(ComPortComboBox, error.Message);
-                        break;
-                }
-            }
         }
 
         private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -361,80 +280,19 @@ namespace Serial2CNC
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
-        private void ModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (TcpSettingsGroup is null || SerialSettingsGroup is null)
-            {
-                return;
-            }
-
-            var useTcp = TcpModeRadio.IsChecked == true;
-            TcpSettingsGroup.IsEnabled = useTcp;
-            SerialSettingsGroup.IsEnabled = !useTcp;
-
-            if (!useTcp)
-            {
-                LoadAvailableComPorts();
-            }
-        }
-
-        private void AdvancedSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (AdvancedSettingsPanel is null)
-            {
-                return;
-            }
-
-            AdvancedSettingsPanel.Visibility = AdvancedSettingsPanel.Visibility == Visibility.Visible
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-        }
-
-        private void ThemeModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (Application.Current is not App app)
-            {
-                return;
-            }
-
-            if (sender is not RadioButton radio || radio.IsChecked != true)
-            {
-                return;
-            }
-
-            if (radio.Name == "ThemeDarkRadio")
-            {
-                app.SetThemePreference(ThemePreference.Dark);
-                return;
-            }
-
-            if (radio.Name == "ThemeLightRadio")
-            {
-                app.SetThemePreference(ThemePreference.Light);
-                return;
-            }
-
-            app.SetThemePreference(ThemePreference.System);
-        }
-
         private void ProgramNameTextBox_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            ProgramNameTextBox.IsReadOnly = false;
+            ViewModel.IsProgramNameReadOnly = false;
             ProgramNameTextBox.Focus();
             ProgramNameTextBox.SelectAll();
         }
 
         private void ProgramNameTextBox_LostKeyboardFocus(object sender, System.Windows.Input.KeyboardFocusChangedEventArgs e)
         {
-            ProgramNameTextBox.IsReadOnly = true;
+            ViewModel.IsProgramNameReadOnly = true;
         }
 
-        private void RefreshPorts_Click(object sender, RoutedEventArgs e)
-        {
-            LoadAvailableComPorts();
-        }
-
-        private void BrowseFile_Click(object sender, RoutedEventArgs e)
+        private void BrowseFile()
         {
             var dialog = new OpenFileDialog
             {
@@ -446,29 +304,28 @@ namespace Serial2CNC
                 return;
             }
 
-            FilePathTextBox.Text = dialog.FileName;
-            ProgramNameTextBox.Text = $"{Path.GetFileNameWithoutExtension(dialog.FileName)}.MIL".ToUpperInvariant();
+            ViewModel.FilePath = dialog.FileName;
+            ViewModel.ProgramName = $"{Path.GetFileNameWithoutExtension(dialog.FileName)}.MIL".ToUpperInvariant();
         }
 
-        private async void Start_Click(object sender, RoutedEventArgs e)
+        private async Task StartAsync()
         {
             if (_transferCts is not null)
             {
                 return;
             }
 
-            var formValues = CaptureFormValues();
+            var formValues = ViewModel.CaptureFormValues();
             if (!TrySaveSettings())
             {
                 return;
             }
 
-            ClearValidationErrors();
             var validationErrors = _validationService.Validate(formValues);
+            ViewModel.SetValidationErrors(validationErrors);
             if (validationErrors.Count > 0)
             {
-                MarkValidationErrors(validationErrors);
-                StatusTextBlock.Text = "Invalid settings.";
+                ViewModel.Status = "Invalid settings.";
                 foreach (var error in validationErrors)
                 {
                     AppendLog($"Invalid settings: {error.Message}");
@@ -484,18 +341,17 @@ namespace Serial2CNC
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = "Invalid settings.";
+                ViewModel.Status = "Invalid settings.";
                 AppendLog($"Invalid settings: {ex.Message}");
                 return;
             }
 
-            StartButton.IsEnabled = false;
-            CancelButton.IsEnabled = true;
-            LogTextBox.Clear();
+            ViewModel.IsTransferring = true;
+            ViewModel.Log = string.Empty;
             AppendLog($"Line delay: {request.Transfer.SendDelayMs} ms between lines."
                 + (request.Mode == ConnectionMode.Tcp ? " TCP Nagle buffering disabled." : string.Empty));
-            StatusTextBlock.Text = "Starting transfer...";
-            TransferProgressBar.Value = 0;
+            ViewModel.Status = "Starting transfer...";
+            ViewModel.Progress = 0;
 
             _transferCts = new CancellationTokenSource();
 
@@ -508,16 +364,16 @@ namespace Serial2CNC
                     _transferCts.Token);
                 await _activeTransferTask;
 
-                StatusTextBlock.Text = "Transfer complete.";
+                ViewModel.Status = "Transfer complete.";
             }
             catch (OperationCanceledException)
             {
-                StatusTextBlock.Text = "Transfer canceled.";
+                ViewModel.Status = "Transfer canceled.";
                 AppendLog("Transfer canceled.");
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = "Transfer failed.";
+                ViewModel.Status = "Transfer failed.";
                 AppendLog($"Transfer failed: {ex.Message}");
             }
             finally
@@ -525,27 +381,21 @@ namespace Serial2CNC
                 _activeTransferTask = Task.CompletedTask;
                 _transferCts.Dispose();
                 _transferCts = null;
-                StartButton.IsEnabled = true;
-                CancelButton.IsEnabled = false;
+                ViewModel.IsTransferring = false;
             }
-        }
-
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            _transferCts?.Cancel();
         }
 
         private void ReportProgress(TransferProgress progress)
         {
-            StatusTextBlock.Text = progress.Message;
+            ViewModel.Status = progress.Message;
 
             if (progress.Total > 0)
             {
-                TransferProgressBar.Value = (progress.Current * 100.0) / progress.Total;
+                ViewModel.Progress = (progress.Current * 100.0) / progress.Total;
             }
             else
             {
-                TransferProgressBar.Value = 0;
+                ViewModel.Progress = 0;
             }
 
             if (!string.IsNullOrWhiteSpace(progress.Line))
@@ -556,32 +406,26 @@ namespace Serial2CNC
 
         private void AppendLog(string line)
         {
-            LogTextBox.AppendText(line + Environment.NewLine);
-            LogTextBox.ScrollToEnd();
+            ViewModel.Log += line + Environment.NewLine;
         }
 
         private void LoadAvailableComPorts()
         {
-            var selected = ComPortComboBox.Text;
+            var selected = ViewModel.ComPort;
             var ports = GetAvailableComPorts();
-
-            ComPortComboBox.Items.Clear();
-            foreach (var port in ports)
-            {
-                ComPortComboBox.Items.Add(port);
-            }
+            ViewModel.AvailableComPorts = ports;
 
             if (!string.IsNullOrWhiteSpace(selected))
             {
-                ComPortComboBox.Text = selected;
+                ViewModel.ComPort = selected;
             }
             else if (ports.Length > 0)
             {
-                ComPortComboBox.SelectedIndex = 0;
+                ViewModel.ComPort = ports[0];
             }
             else
             {
-                ComPortComboBox.Text = "COM1";
+                ViewModel.ComPort = "COM1";
             }
         }
 
@@ -592,56 +436,5 @@ namespace Serial2CNC
             return ports;
         }
 
-        private void MarkControlError(Control control, string message)
-        {
-            if (!_validationStateByControl.ContainsKey(control))
-            {
-                _validationStateByControl[control] = new ControlValidationState(
-                    control.BorderBrush,
-                    control.BorderThickness,
-                    ToolTipService.GetToolTip(control));
-            }
-
-            control.BorderBrush = Brushes.OrangeRed;
-            control.BorderThickness = new Thickness(0, 0, 0, 2);
-            ToolTipService.SetToolTip(control, message);
-
-            if (_errorTextByControl.TryGetValue(control, out var errorText))
-            {
-                errorText.Text = message;
-                errorText.Visibility = Visibility.Visible;
-            }
-        }
-
-        private void ClearControlError(Control control)
-        {
-            if (!_validationStateByControl.TryGetValue(control, out var previousState))
-            {
-                return;
-            }
-
-            control.BorderBrush = previousState.BorderBrush;
-            control.BorderThickness = previousState.BorderThickness;
-            ToolTipService.SetToolTip(control, previousState.ToolTip);
-
-            if (_errorTextByControl.TryGetValue(control, out var errorText))
-            {
-                errorText.Text = string.Empty;
-                errorText.Visibility = Visibility.Collapsed;
-            }
-
-            _validationStateByControl.Remove(control);
-        }
-
-        private void ClearValidationErrors()
-        {
-            var controls = _validationStateByControl.Keys.ToArray();
-            foreach (var control in controls)
-            {
-                ClearControlError(control);
-            }
-        }
-
-        private sealed record ControlValidationState(Brush BorderBrush, Thickness BorderThickness, object? ToolTip);
     }
 }

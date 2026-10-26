@@ -15,6 +15,9 @@
     <ProjectReference Include="..\Serial2CNC.Web\Serial2CNC.Web.csproj" />
     <Compile Include="..\Serial2CNC\Presentation\DesktopSettings.cs" Link="DesktopSettings.cs" />
     <Compile Include="..\Serial2CNC\Presentation\TransferFormValues.cs" Link="TransferFormValues.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\DelegateCommand.cs" Link="DelegateCommand.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\MainWindowViewModel.cs" Link="MainWindowViewModel.cs" />
+    <Compile Include="..\Serial2CNC\Presentation\TransferValidationService.cs" Link="TransferValidationService.cs" />
     <Compile Include="..\Serial2CNC\Presentation\TransferRequestFactory.cs" Link="TransferRequestFactory.cs" />
     <Compile Include="..\Serial2CNC\Presentation\TransferExecutionService.cs" Link="TransferExecutionService.cs" />
     <Compile Include="..\Serial2CNC\ThemePreference.cs" Link="ThemePreference.cs" />

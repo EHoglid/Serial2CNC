@@ -7,6 +7,7 @@
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
         Style="{DynamicResource MaterialDesignWindow}"
+        IsEnabled="{Binding IsInteractive}"
         Title="Serial2CNC - Send2CNC"
         Icon="Assets/Serial2CNC.ico"
         Height="760"
@@ -30,7 +31,31 @@
             <Setter Property="Foreground" Value="OrangeRed" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Margin" Value="0,2,0,6" />
-            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ValidatedTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="BorderBrush" Value="OrangeRed" />
+                    <Setter Property="BorderThickness" Value="0,0,0,2" />
+                    <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ValidatedComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="True">
+                    <Setter Property="BorderBrush" Value="OrangeRed" />
+                    <Setter Property="BorderThickness" Value="0,0,0,2" />
+                    <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
@@ -73,19 +98,19 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <RadioButton x:Name="TcpModeRadio" Content="TCP (USR-W610)" IsChecked="True" Margin="0,0,16,0" Checked="ModeChanged" />
-                    <RadioButton x:Name="SerialModeRadio" Content="Serial / COM" Checked="ModeChanged" />
+                    <RadioButton Content="TCP (USR-W610)" IsChecked="{Binding UseTcp}" Margin="0,0,16,0" />
+                    <RadioButton Content="Serial / COM" IsChecked="{Binding UseSerial}" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                     <Button x:Name="OpenWebAppButton"
                             Content="Open web app"
-                            Visibility="Collapsed"
+                            Visibility="{Binding IsWebRunning, Converter={StaticResource BoolToVisibilityConverter}}"
                             Margin="0,0,8,0"
-                            Click="OpenWeb_Click"
+                            Command="{Binding OpenWebCommand}"
                             ToolTip="Open the running web application in your browser" />
                     <Button x:Name="AdvancedSettingsButton"
-                            Click="AdvancedSettingsButton_Click"
+                            Command="{Binding ToggleSettingsCommand}"
                             ToolTip="Show or hide advanced connection settings">
                         <StackPanel Orientation="Horizontal">
                             <materialDesign:PackIcon Kind="CogOutline" Width="16" Height="16" Margin="0,0,6,0" />
@@ -96,20 +121,20 @@
             </Grid>
         </materialDesign:Card>
 
-        <ScrollViewer x:Name="AdvancedSettingsPanel" Grid.Row="1" Margin="0,0,0,10" Visibility="Collapsed"
+        <ScrollViewer Grid.Row="1" Margin="0,0,0,10" Visibility="{Binding ShowSettings, Converter={StaticResource BoolToVisibilityConverter}}"
                       MaxHeight="300" VerticalScrollBarVisibility="Auto">
         <StackPanel>
             <TextBlock Text="Connection settings (advanced)" FontWeight="SemiBold" Margin="0,0,0,8" />
                 <materialDesign:Card Margin="0,0,0,10" Padding="12">
                     <StackPanel>
                         <WrapPanel>
-                            <CheckBox x:Name="WebEnabledCheckBox" Content="Enable built-in web application (LAN)"
-                                      VerticalAlignment="Center" Checked="WebEnabled_Changed" Unchecked="WebEnabled_Changed" Margin="0,0,16,0" />
+                            <CheckBox Content="Enable built-in web application (LAN)" IsChecked="{Binding WebEnabled}"
+                                      IsEnabled="{Binding CanConfigureWeb}" VerticalAlignment="Center" Margin="0,0,16,0" />
                             <TextBlock Text="Port:" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBox x:Name="WebPortTextBox" Text="62899" Width="70" Margin="0,0,12,0" />
-                            <Button Content="Open web app" Click="OpenWeb_Click" />
+                            <TextBox Text="{Binding WebPort, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditWebPort}" Width="70" Margin="0,0,12,0" />
+                            <Button Content="Open web app" Command="{Binding OpenWebCommand}" />
                         </WrapPanel>
-                        <TextBlock x:Name="WebStatusTextBlock" Text="Web application disabled." Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding WebStatus}" Margin="0,8,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="Trusted LAN only; no login. Configure the web program folder and destination in the browser."
                                    Opacity="0.72" TextWrapping="Wrap" />
                     </StackPanel>
@@ -124,14 +149,14 @@
 
                         <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Theme:" Style="{StaticResource FieldLabelStyle}" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <RadioButton x:Name="ThemeSystemRadio" Content="System" GroupName="ThemePreference" Checked="ThemeModeChanged" Margin="0,0,16,0" IsChecked="True" />
-                            <RadioButton x:Name="ThemeLightRadio" Content="Light" GroupName="ThemePreference" Checked="ThemeModeChanged" Margin="0,0,16,0" />
-                            <RadioButton x:Name="ThemeDarkRadio" Content="Dark" GroupName="ThemePreference" Checked="ThemeModeChanged" />
+                            <RadioButton Content="System" GroupName="ThemePreference" IsChecked="{Binding IsSystemTheme}" Margin="0,0,16,0" />
+                            <RadioButton Content="Light" GroupName="ThemePreference" IsChecked="{Binding IsLightTheme}" Margin="0,0,16,0" />
+                            <RadioButton Content="Dark" GroupName="ThemePreference" IsChecked="{Binding IsDarkTheme}" />
                         </StackPanel>
                     </Grid>
                 </materialDesign:Card>
 
-                <materialDesign:Card x:Name="TcpSettingsGroup" Margin="0,0,0,10" Padding="12">
+                <materialDesign:Card IsEnabled="{Binding UseTcp}" Margin="0,0,0,10" Padding="12">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="160" />
@@ -149,19 +174,19 @@
                         <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Text="TCP Settings" Style="{StaticResource SectionTitleStyle}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="IP Address:" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox x:Name="TcpIpTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,12,0" Text="192.168.1.50" materialDesign:HintAssist.Hint="IP Address" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,12,0" Style="{StaticResource ValidatedTextBoxStyle}" Text="{Binding TcpHost, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" materialDesign:HintAssist.Hint="IP Address" />
 
                         <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Port:" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox x:Name="TcpPortTextBox" Grid.Row="1" Grid.Column="3" Margin="0,0,0,0" Text="23" materialDesign:HintAssist.Hint="Port" />
+                        <TextBox Grid.Row="1" Grid.Column="3" Margin="0,0,0,0" Style="{StaticResource ValidatedTextBoxStyle}" Text="{Binding TcpPort, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" materialDesign:HintAssist.Hint="Port" />
 
-                        <TextBlock x:Name="TcpIpErrorText" Grid.Row="2" Grid.Column="1" Style="{StaticResource ErrorTextStyle}" />
-                        <TextBlock x:Name="TcpPortErrorText" Grid.Row="2" Grid.Column="3" Style="{StaticResource ErrorTextStyle}" />
+                        <TextBlock Text="{Binding TcpHostError}" Grid.Row="2" Grid.Column="1" Style="{StaticResource ErrorTextStyle}" />
+                        <TextBlock Text="{Binding TcpPortError}" Grid.Row="2" Grid.Column="3" Style="{StaticResource ErrorTextStyle}" />
 
-                        <CheckBox x:Name="TcpXonXoffCheckBox" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="4" Content="Use TCP XON/XOFF flow control" IsChecked="True" />
+                        <CheckBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="4" Content="Use TCP XON/XOFF flow control" IsChecked="{Binding TcpUseXonXoff}" />
                     </Grid>
                 </materialDesign:Card>
 
-                <materialDesign:Card x:Name="SerialSettingsGroup" Margin="0,0,0,10" Padding="12" IsEnabled="False">
+                <materialDesign:Card Margin="0,0,0,10" Padding="12" IsEnabled="{Binding UseSerial}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="160" />
@@ -181,52 +206,24 @@
 
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="COM Port:" Style="{StaticResource FieldLabelStyle}" />
                         <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,0,12,6">
-                            <Button Content="Refresh" DockPanel.Dock="Right" Margin="6,0,0,0" Padding="8,2" Click="RefreshPorts_Click" />
-                            <ComboBox x:Name="ComPortComboBox" IsEditable="True" />
+                            <Button Content="Refresh" DockPanel.Dock="Right" Margin="6,0,0,0" Padding="8,2" Command="{Binding RefreshPortsCommand}" />
+                            <ComboBox Style="{StaticResource ValidatedComboBoxStyle}" ItemsSource="{Binding AvailableComPorts}" Text="{Binding ComPort, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" IsEditable="True" />
                         </DockPanel>
 
                         <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Baud Rate:" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox x:Name="BaudRateComboBox" Grid.Row="1" Grid.Column="3" Margin="0,0,0,6" IsEditable="True" SelectedIndex="5">
-                            <ComboBoxItem Content="110" />
-                            <ComboBoxItem Content="300" />
-                            <ComboBoxItem Content="600" />
-                            <ComboBoxItem Content="1200" />
-                            <ComboBoxItem Content="2400" />
-                            <ComboBoxItem Content="4800" />
-                            <ComboBoxItem Content="9600" />
-                            <ComboBoxItem Content="19200" />
-                            <ComboBoxItem Content="38400" />
-                            <ComboBoxItem Content="57600" />
-                            <ComboBoxItem Content="115200" />
-                        </ComboBox>
+                        <ComboBox Grid.Row="1" Grid.Column="3" Margin="0,0,0,6" IsEditable="True" ItemsSource="{Binding BaudRateOptions}" Text="{Binding BaudRate, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Parity:" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox x:Name="ParityComboBox" Grid.Row="2" Grid.Column="1" Margin="0,0,12,6" SelectedIndex="0">
-                            <ComboBoxItem Content="None" />
-                            <ComboBoxItem Content="Odd" />
-                            <ComboBoxItem Content="Even" />
-                            <ComboBoxItem Content="Mark" />
-                            <ComboBoxItem Content="Space" />
-                        </ComboBox>
+                        <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,12,6" ItemsSource="{Binding ParityOptions}" SelectedItem="{Binding Parity}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="Data Bits:" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox x:Name="DataBitsTextBox" Grid.Row="2" Grid.Column="3" Margin="0,0,0,6" Text="8" materialDesign:HintAssist.Hint="Data Bits" />
+                        <TextBox Grid.Row="2" Grid.Column="3" Margin="0,0,0,6" Text="{Binding DataBits, UpdateSourceTrigger=PropertyChanged}" materialDesign:HintAssist.Hint="Data Bits" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Stop Bits:" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox x:Name="StopBitsComboBox" Grid.Row="3" Grid.Column="1" Margin="0,0,12,0" SelectedIndex="1">
-                            <ComboBoxItem Content="None" />
-                            <ComboBoxItem Content="One" />
-                            <ComboBoxItem Content="Two" />
-                            <ComboBoxItem Content="OnePointFive" />
-                        </ComboBox>
+                        <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,0,12,0" ItemsSource="{Binding StopBitsOptions}" SelectedItem="{Binding StopBits}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Text="Handshake:" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox x:Name="HandshakeComboBox" Grid.Row="3" Grid.Column="3" SelectedIndex="0">
-                            <ComboBoxItem Content="None" />
-                            <ComboBoxItem Content="XOnXOff" />
-                            <ComboBoxItem Content="RequestToSend" />
-                            <ComboBoxItem Content="RequestToSendXOnXOff" />
-                        </ComboBox>
+                        <ComboBox Grid.Row="3" Grid.Column="3" ItemsSource="{Binding HandshakeOptions}" SelectedItem="{Binding Handshake}" />
                     </Grid>
                 </materialDesign:Card>
 
@@ -247,16 +244,16 @@
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="Send settings" FontWeight="SemiBold" Margin="0,0,0,4" />
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Delay between lines (ms):" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox x:Name="SendDelayTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,10,0" Text="0" materialDesign:HintAssist.Hint="0" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,10,0" Style="{StaticResource ValidatedTextBoxStyle}" Text="{Binding SendDelay, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" materialDesign:HintAssist.Hint="0" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Text="Okuma settings" FontWeight="SemiBold" Margin="0,0,0,4" />
 
-                        <CheckBox x:Name="UseOspCheckBox"
+                        <CheckBox
                                   Grid.Row="4"
                                   Grid.Column="0"
                                   Grid.ColumnSpan="3"
                                   Content="Use Okuma OSP7000L framing (${NAME}% ... %)"
-                                  IsChecked="True" />
+                                  IsChecked="{Binding UseOsp7000lFraming}" />
                     </Grid>
                 </materialDesign:Card>
         </StackPanel>
@@ -279,10 +276,10 @@
                 <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="File and OSP7000L Options" Style="{StaticResource SectionTitleStyle}" />
 
                 <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="NC File:" Style="{StaticResource FieldLabelStyle}" />
-                <TextBox x:Name="FilePathTextBox" Grid.Row="1" Grid.Column="1" Margin="0,0,10,6" materialDesign:HintAssist.Hint="Path to .nc file" />
-                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="BrowseFile_Click" Margin="0,0,0,6" VerticalAlignment="Bottom" />
+                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,10,6" Style="{StaticResource ValidatedTextBoxStyle}" Text="{Binding FilePath, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" materialDesign:HintAssist.Hint="Path to .nc file" />
+                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Command="{Binding BrowseCommand}" Margin="0,0,0,6" VerticalAlignment="Bottom" />
 
-                <TextBlock x:Name="FilePathErrorText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ErrorTextStyle}" />
+                <TextBlock Text="{Binding FilePathError}" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource ErrorTextStyle}" />
 
                 <TextBlock x:Name="ProgramNameLabel"
                            Grid.Row="3"
@@ -290,21 +287,22 @@
                            VerticalAlignment="Center"
                            Text="Program Name:"
                            Style="{StaticResource FieldLabelStyle}"
-                           Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}" />
+                           Visibility="{Binding UseOsp7000lFraming, Converter={StaticResource BoolToVisibilityConverter}}" />
                 <Grid x:Name="ProgramNamePanel"
                       Grid.Row="3"
                       Grid.Column="1"
                       Grid.ColumnSpan="2"
                       Margin="0,0,0,4"
-                      Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}">
+                      Visibility="{Binding UseOsp7000lFraming, Converter={StaticResource BoolToVisibilityConverter}}">
                     <TextBox x:Name="ProgramNameTextBox"
+                             Text="{Binding ProgramName, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="{Binding IsProgramNameReadOnly}"
                              ToolTip="Leave empty to auto-generate from file name as UPPERCASE .MIL"
                              materialDesign:HintAssist.Hint="Optional program name"
                              MouseDoubleClick="ProgramNameTextBox_MouseDoubleClick"
                              LostKeyboardFocus="ProgramNameTextBox_LostKeyboardFocus">
                         <TextBox.Style>
                             <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                <Setter Property="IsReadOnly" Value="True" />
                                 <Setter Property="Cursor" Value="Arrow" />
                                 <Setter Property="Opacity" Value="0.72" />
                                 <Style.Triggers>
@@ -325,7 +323,7 @@
                            FontSize="11"
                            Opacity="0.70"
                            Text="Double-click to edit." 
-                           Visibility="{Binding ElementName=UseOspCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}" />
+                           Visibility="{Binding UseOsp7000lFraming, Converter={StaticResource BoolToVisibilityConverter}}" />
             </Grid>
         </materialDesign:Card>
 
@@ -345,15 +343,15 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0" Text="Transfer and Log" Style="{StaticResource SectionTitleStyle}" />
-                    <Button x:Name="StartButton" Grid.Column="1" Content="Start Send" Click="Start_Click" Margin="0,0,8,0" />
-                    <Button x:Name="CancelButton" Grid.Column="2" Content="Cancel" Click="Cancel_Click" IsEnabled="False" />
+                    <Button Grid.Column="1" Content="Start Send" Command="{Binding StartCommand}" Margin="0,0,8,0" />
+                    <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCommand}" />
                 </Grid>
 
-                <TextBlock x:Name="StatusTextBlock" Grid.Row="1" Text="Ready" Margin="0,0,0,6" FontWeight="SemiBold" />
-                <TextBox x:Name="LogTextBox" Grid.Row="2" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" materialDesign:HintAssist.Hint="Transfer output" />
+                <TextBlock Grid.Row="1" Text="{Binding Status}" Margin="0,0,0,6" FontWeight="SemiBold" />
+                <TextBox x:Name="LogTextBox" Text="{Binding Log, Mode=OneWay}" Grid.Row="2" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" materialDesign:HintAssist.Hint="Transfer output" />
             </Grid>
         </materialDesign:Card>
 
-        <ProgressBar x:Name="TransferProgressBar" Grid.Row="6" Height="20" Minimum="0" Maximum="100" />
+        <ProgressBar Value="{Binding Progress, Mode=OneWay}" Grid.Row="6" Height="20" Minimum="0" Maximum="100" />
     </Grid>
 </Window>

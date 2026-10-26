@@ -15,6 +15,11 @@ Okuma OSP7000L framing.
 The shared transfer runtime lives in [Serial2CNC.Agent](Serial2CNC.Agent); it is a
 library, not a separately installed or running service.
 
+The WPF desktop window binds its form values, validation, status, progress and
+commands to [MainWindowViewModel](Serial2CNC/Presentation/MainWindowViewModel.cs).
+Window code coordinates hosting and transfers, native dialogs and view-only
+behavior such as focus, log scrolling and title-bar styling.
+
 ## Windows desktop installation
 
 1. Download `Serial2CNC-<version>-win-x64.exe` and its SHA-256 checksum from
