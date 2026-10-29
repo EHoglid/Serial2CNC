@@ -5,7 +5,28 @@
 
 version: 2
 updates:
-  - package-ecosystem: "dotnet-sdk" # See documentation for possible values
-    directory: "/src" # Location of package manifests
+  - package-ecosystem: "nuget"
+    directories:
+      - "/Serial2CNC"
+      - "/Serial2CNC.Agent"
+      - "/Serial2CNC.Cli"
+      - "/Serial2CNC.Core"
+      - "/Serial2CNC.Tests"
+      - "/Serial2CNC.Web"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/Serial2CNC.Web"
     schedule:
       interval: "weekly"
