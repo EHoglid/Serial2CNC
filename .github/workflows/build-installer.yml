@@ -76,7 +76,7 @@ jobs:
           if ($uninstall.ExitCode -ne 0 -or (Test-Path "$installDir\Serial2CNC.exe")) {
               throw 'Desktop uninstallation failed.'
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Serial2CNC-${{ steps.version.outputs.full_version }}-win-x64
           path: |
