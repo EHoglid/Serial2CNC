@@ -98,7 +98,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
 
       - name: Download tested installer
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: Serial2CNC-${{ needs.prepare.outputs.version }}-win-x64
           path: installer
